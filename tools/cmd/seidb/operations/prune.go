@@ -3,6 +3,8 @@ package operations
 import (
 	"fmt"
 
+	"github.com/sei-protocol/sei-db/common/logger"
+
 	"github.com/sei-protocol/sei-db/config"
 	"github.com/sei-protocol/sei-db/ss"
 	"github.com/sei-protocol/sei-db/tools/cmd/seidb/benchmark"
@@ -13,7 +15,7 @@ func PruneCmd() *cobra.Command {
 	pruneDbCmd := &cobra.Command{
 		Use:   "prune",
 		Short: "Prune a db at a given height",
-		Run:   prune,
+		Run:   executePrune,
 	}
 
 	pruneDbCmd.PersistentFlags().StringP("db-dir", "d", "", "Database Directory")
@@ -23,7 +25,7 @@ func PruneCmd() *cobra.Command {
 	return pruneDbCmd
 }
 
-func prune(cmd *cobra.Command, _ []string) {
+func executePrune(cmd *cobra.Command, _ []string) {
 	dbDir, _ := cmd.Flags().GetString("db-dir")
 	dbBackend, _ := cmd.Flags().GetString("db-backend")
 	version, _ := cmd.Flags().GetInt64("version")
@@ -53,7 +55,7 @@ func PruneDB(dbBackend string, dbDir string, version int64) {
 	// TODO: Defer Close Db
 	ssConfig := config.DefaultStateStoreConfig()
 	ssConfig.Backend = dbBackend
-	backend, err := ss.NewStateStore(dbDir, ssConfig)
+	backend, err := ss.NewStateStore(logger.NewNopLogger(), dbDir, ssConfig)
 	if err != nil {
 		panic(err)
 	}

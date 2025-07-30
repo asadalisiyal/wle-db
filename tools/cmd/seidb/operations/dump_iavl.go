@@ -9,15 +9,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var AllModules = []string{
-	"dex", "wasm", "aclaccesscontrol", "oracle", "epoch", "mint", "acc", "bank", "crisis", "feegrant", "staking", "distribution", "slashing", "gov", "params", "ibc", "upgrade", "evidence", "transfer", "tokenfactory",
-}
-
 func DumpIAVLCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dump-iavl",
 		Short: "Iterate and dump memIAVL data",
-		Run:   execute,
+		Run:   executeDumpIAVL,
 	}
 
 	cmd.PersistentFlags().StringP("db-dir", "d", "", "Database Directory")
@@ -27,7 +23,7 @@ func DumpIAVLCmd() *cobra.Command {
 	return cmd
 }
 
-func execute(cmd *cobra.Command, _ []string) {
+func executeDumpIAVL(cmd *cobra.Command, _ []string) {
 	module, _ := cmd.Flags().GetString("module")
 	dbDir, _ := cmd.Flags().GetString("db-dir")
 	outputDir, _ := cmd.Flags().GetString("output-dir")
@@ -41,14 +37,6 @@ func execute(cmd *cobra.Command, _ []string) {
 		panic("Must provide output dir")
 	}
 
-	err := DumpIAVLData(module, dbDir, outputDir, height)
-	if err != nil {
-		panic(err)
-	}
-}
-
-// DumpIAVLData print the raw keys and values for given module at given height for memIAVL tree
-func DumpIAVLData(module string, dbDir string, outputDir string, height int64) error {
 	opts := memiavl.Options{
 		Dir:             dbDir,
 		ZeroCopy:        true,
@@ -56,9 +44,17 @@ func DumpIAVLData(module string, dbDir string, outputDir string, height int64) e
 	}
 	db, err := memiavl.OpenDB(logger.NewNopLogger(), height, opts)
 	if err != nil {
-		return err
+		panic(err)
 	}
 	defer db.Close()
+	err = DumpIAVLData(module, db, outputDir)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// DumpIAVLData print the raw keys and values for given module at given height for memIAVL tree
+func DumpIAVLData(module string, db *memiavl.DB, outputDir string) error {
 	modules := []string{}
 	if module == "" {
 		modules = AllModules

@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/cosmos/iavl"
+	"github.com/sei-protocol/sei-db/config"
 	"github.com/sei-protocol/sei-db/ss/types"
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/exp/slices"
@@ -12,19 +13,21 @@ import (
 
 const (
 	storeKey1 = "store1"
+	storeKey2 = "store2"
 )
 
 // StorageTestSuite defines a reusable test suite for all storage backends.
 type StorageTestSuite struct {
 	suite.Suite
 
-	NewDB          func(dir string) (types.StateStore, error)
+	NewDB          func(dir string, config config.StateStoreConfig) (types.StateStore, error)
 	EmptyBatchSize int
 	SkipTests      []string
+	Config         config.StateStoreConfig
 }
 
 func (s *StorageTestSuite) TestDatabaseClose() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	s.Require().NoError(db.Close())
 
@@ -34,7 +37,7 @@ func (s *StorageTestSuite) TestDatabaseClose() {
 
 func (s *StorageTestSuite) TestDatabaseLatestVersion() {
 	tempDir := s.T().TempDir()
-	db, err := s.NewDB(tempDir)
+	db, err := s.NewDB(tempDir, s.Config)
 	s.Require().NoError(err)
 
 	lv, err := db.GetLatestVersion()
@@ -55,7 +58,7 @@ func (s *StorageTestSuite) TestDatabaseLatestVersion() {
 	err = db.Close()
 	s.Require().NoError(err)
 
-	newDB, err := s.NewDB(tempDir)
+	newDB, err := s.NewDB(tempDir, s.Config)
 	s.Require().NoError(err)
 	defer newDB.Close()
 
@@ -66,7 +69,7 @@ func (s *StorageTestSuite) TestDatabaseLatestVersion() {
 }
 
 func (s *StorageTestSuite) TestDatabaseVersionedKeys() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -80,7 +83,7 @@ func (s *StorageTestSuite) TestDatabaseVersionedKeys() {
 }
 
 func (s *StorageTestSuite) TestDatabaseGetVersionedKey() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -149,7 +152,7 @@ func (s *StorageTestSuite) TestDatabaseGetVersionedKey() {
 
 func (s *StorageTestSuite) TestDatabaseVersionZero() {
 	// Db should write all keys at version 0 at version 1
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -183,7 +186,7 @@ func (s *StorageTestSuite) TestDatabaseVersionZero() {
 }
 
 func (s *StorageTestSuite) TestDatabaseApplyChangeset() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -220,7 +223,7 @@ func (s *StorageTestSuite) TestDatabaseApplyChangeset() {
 }
 
 func (s *StorageTestSuite) TestDatabaseIteratorEmptyDomain() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -230,7 +233,7 @@ func (s *StorageTestSuite) TestDatabaseIteratorEmptyDomain() {
 }
 
 func (s *StorageTestSuite) TestDatabaseIteratorClose() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -243,7 +246,7 @@ func (s *StorageTestSuite) TestDatabaseIteratorClose() {
 }
 
 func (s *StorageTestSuite) TestDatabaseIteratorDomain() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -274,7 +277,7 @@ func (s *StorageTestSuite) TestDatabaseIteratorDomain() {
 }
 
 func (s *StorageTestSuite) TestDatabaseIterator() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -332,7 +335,7 @@ func (s *StorageTestSuite) TestDatabaseIterator() {
 	s.Require().Nil(iter3)
 }
 func (s *StorageTestSuite) TestDatabaseIteratorRangedDeletes() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -357,7 +360,7 @@ func (s *StorageTestSuite) TestDatabaseIteratorRangedDeletes() {
 }
 
 func (s *StorageTestSuite) TestDatabaseIteratorDeletes() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -393,7 +396,7 @@ func (s *StorageTestSuite) TestDatabaseIteratorDeletes() {
 }
 
 func (s *StorageTestSuite) TestDatabaseIteratorMultiVersion() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -439,7 +442,7 @@ func (s *StorageTestSuite) TestDatabaseIteratorMultiVersion() {
 
 // Tests bug where iterator loops continuously
 func (s *StorageTestSuite) TestDatabaseBugInitialReverseIteration() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -468,7 +471,7 @@ func (s *StorageTestSuite) TestDatabaseBugInitialReverseIteration() {
 }
 
 func (s *StorageTestSuite) TestDatabaseBugInitialForwardIteration() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -498,7 +501,7 @@ func (s *StorageTestSuite) TestDatabaseBugInitialForwardIteration() {
 }
 
 func (s *StorageTestSuite) TestDatabaseBugInitialForwardIterationHigher() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -526,7 +529,7 @@ func (s *StorageTestSuite) TestDatabaseBugInitialForwardIterationHigher() {
 }
 
 func (s *StorageTestSuite) TestDatabaseBugInitialReverseIterationHigher() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -555,7 +558,7 @@ func (s *StorageTestSuite) TestDatabaseBugInitialReverseIterationHigher() {
 }
 
 func (s *StorageTestSuite) TestDatabaseIteratorNoDomain() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -584,7 +587,7 @@ func (s *StorageTestSuite) TestDatabasePrune() {
 		s.T().SkipNow()
 	}
 
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -648,7 +651,7 @@ func (s *StorageTestSuite) TestDatabasePrune() {
 }
 
 func (s *StorageTestSuite) TestDatabasePruneAndTombstone() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -669,7 +672,7 @@ func (s *StorageTestSuite) TestDatabasePruneKeepRecent() {
 		s.T().SkipNow()
 	}
 
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -712,8 +715,66 @@ func (s *StorageTestSuite) TestDatabasePruneKeepRecent() {
 	s.Require().Equal([]byte("value003"), bz)
 }
 
+func (s *StorageTestSuite) TestDatabasePruneKeepLastVersion() {
+	// Update config to set KeepLastVersion to false
+	stateStoreConfig := s.Config
+	stateStoreConfig.KeepLastVersion = false
+	db, err := s.NewDB(s.T().TempDir(), stateStoreConfig)
+	s.Require().NoError(err)
+	defer db.Close()
+
+	s.Require().NoError(DBApplyChangeset(db, 100, storeKey1, [][]byte{[]byte("key000")}, [][]byte{[]byte("value001")}))
+	s.Require().NoError(DBApplyChangeset(db, 100, storeKey1, [][]byte{[]byte("key001")}, [][]byte{[]byte("value002")}))
+	s.Require().NoError(DBApplyChangeset(db, 200, storeKey1, [][]byte{[]byte("key002")}, [][]byte{[]byte("value003")}))
+	s.Require().NoError(DBApplyChangeset(db, 200, storeKey1, [][]byte{[]byte("key003")}, [][]byte{[]byte("value004")}))
+
+	// prune version 150
+	s.Require().NoError(db.Prune(150))
+
+	// Verify that all keys before prune height are deleted
+	bz, err := db.Get(storeKey1, 100, []byte("key000"))
+	s.Require().NoError(err)
+	s.Require().Nil(bz)
+
+	bz, err = db.Get(storeKey1, 160, []byte("key001"))
+	s.Require().NoError(err)
+	s.Require().Nil(bz)
+
+	// Verify keys after prune height can be retrieved
+	bz, err = db.Get(storeKey1, 200, []byte("key002"))
+	s.Require().NoError(err)
+	s.Require().Equal([]byte("value003"), bz)
+
+	bz, err = db.Get(storeKey1, 220, []byte("key003"))
+	s.Require().NoError(err)
+	s.Require().Equal([]byte("value004"), bz)
+
+	// Now reset KeepLastVersion to true and verify latest version of key exists
+	newDB, err := s.NewDB(s.T().TempDir(), s.Config)
+	s.Require().NoError(err)
+	defer newDB.Close()
+
+	s.Require().NoError(DBApplyChangeset(newDB, 100, storeKey1, [][]byte{[]byte("key000")}, [][]byte{[]byte("value001")}))
+	s.Require().NoError(DBApplyChangeset(newDB, 100, storeKey1, [][]byte{[]byte("key001")}, [][]byte{[]byte("value002")}))
+	s.Require().NoError(DBApplyChangeset(newDB, 200, storeKey1, [][]byte{[]byte("key002")}, [][]byte{[]byte("value003")}))
+	s.Require().NoError(DBApplyChangeset(newDB, 200, storeKey1, [][]byte{[]byte("key003")}, [][]byte{[]byte("value004")}))
+
+	// prune version 150
+	s.Require().NoError(newDB.Prune(150))
+
+	// Can still retrieve those keys because KeepLastVersion is true
+	bz, err = newDB.Get(storeKey1, 160, []byte("key000"))
+	s.Require().NoError(err)
+	s.Require().Equal([]byte("value001"), bz)
+
+	bz, err = newDB.Get(storeKey1, 180, []byte("key001"))
+	s.Require().NoError(err)
+	s.Require().Equal([]byte("value002"), bz)
+
+}
+
 func (s *StorageTestSuite) TestDatabaseReverseIterator() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -768,7 +829,7 @@ func (s *StorageTestSuite) TestDatabaseReverseIterator() {
 }
 
 func (s *StorageTestSuite) TestParallelWrites() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -814,7 +875,7 @@ func (s *StorageTestSuite) TestParallelWrites() {
 }
 
 func (s *StorageTestSuite) TestParallelWriteAndPruning() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -875,7 +936,7 @@ func (s *StorageTestSuite) TestParallelWriteAndPruning() {
 }
 
 func (s *StorageTestSuite) TestDatabaseParallelDeleteIteration() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -948,7 +1009,7 @@ func (s *StorageTestSuite) TestDatabaseParallelDeleteIteration() {
 }
 
 func (s *StorageTestSuite) TestDatabaseParallelWriteDelete() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -1010,7 +1071,8 @@ func (s *StorageTestSuite) TestDatabaseParallelWriteDelete() {
 }
 
 func (s *StorageTestSuite) TestParallelIterationAndPruning() {
-	db, err := s.NewDB(s.T().TempDir())
+	fmt.Printf("DEBUG - config %+v\n", s.Config)
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -1085,7 +1147,7 @@ func (s *StorageTestSuite) TestParallelIterationAndPruning() {
 }
 
 func (s *StorageTestSuite) TestDatabaseParallelIterationVersions() {
-	db, err := s.NewDB(s.T().TempDir())
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
 	s.Require().NoError(err)
 	defer db.Close()
 
@@ -1130,4 +1192,128 @@ func (s *StorageTestSuite) TestDatabaseParallelIterationVersions() {
 	// wait for the goroutines
 	close(triggerStartCh)
 	wg.Wait()
+}
+
+func (s *StorageTestSuite) TestDatabaseImport() {
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
+	s.Require().NoError(err)
+	defer db.Close()
+
+	ch := make(chan types.SnapshotNode, 10)
+	go func() {
+		for i := 0; i < 10; i++ {
+			ch <- types.SnapshotNode{
+				StoreKey: "store1",
+				Key:      []byte(fmt.Sprintf("key%03d", i)),
+				Value:    []byte(fmt.Sprintf("value%03d", i)),
+			}
+		}
+		close(ch)
+	}()
+
+	s.Require().NoError(db.Import(1, ch))
+
+	for i := 0; i < 10; i++ {
+		val, err := db.Get("store1", 1, []byte(fmt.Sprintf("key%03d", i)))
+		s.Require().NoError(err)
+		s.Require().Equal([]byte(fmt.Sprintf("value%03d", i)), val)
+	}
+}
+
+func (s *StorageTestSuite) TestDatabaseRawImport() {
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
+	s.Require().NoError(err)
+	defer db.Close()
+
+	ch := make(chan types.RawSnapshotNode, 10)
+	var wg sync.WaitGroup
+
+	// Write versions in reverse order intentionally
+	for i := 10; i >= 0; i-- {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ch <- types.RawSnapshotNode{
+				StoreKey: "store1",
+				Key:      []byte(fmt.Sprintf("key%03d", i)),
+				Value:    []byte(fmt.Sprintf("value%03d", i)),
+				Version:  int64(i + 1),
+			}
+		}(i)
+	}
+
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	s.Require().NoError(db.RawImport(ch))
+
+	for i := 0; i <= 10; i++ {
+		val, err := db.Get("store1", int64(i+1), []byte(fmt.Sprintf("key%03d", i)))
+		s.Require().NoError(err)
+		s.Require().Equal([]byte(fmt.Sprintf("value%03d", i)), val)
+	}
+}
+
+// Verifies that ReverseIterator(nil, nil) is clamped to the caller's prefix
+// via prefixEnd()/UpperBound and does **not** spill into the next module.
+func (s *StorageTestSuite) TestDatabaseReverseIteratorPrefixIsolation() {
+
+	db, err := s.NewDB(s.T().TempDir(), s.Config)
+	s.Require().NoError(err)
+	defer db.Close()
+
+	// store1 : key000-key009
+	// store2 : key000-key009   (different prefix, same suffixes)
+	var (
+		keys1, vals1 [][]byte
+		keys2, vals2 [][]byte
+	)
+	for i := 0; i < 10; i++ {
+		k := []byte(fmt.Sprintf("key%03d", i))
+		v1 := []byte(fmt.Sprintf("val1-%03d", i))
+		v2 := []byte(fmt.Sprintf("val2-%03d", i))
+
+		keys1 = append(keys1, k)
+		vals1 = append(vals1, v1)
+
+		keys2 = append(keys2, k)
+		vals2 = append(vals2, v2)
+	}
+
+	s.Require().NoError(DBApplyChangeset(db, 1, storeKey1, keys1, vals1))
+	s.Require().NoError(DBApplyChangeset(db, 1, storeKey2, keys2, vals2))
+
+	// ---------- nil / nil reverse scan on store1 ----------
+	itr, err := db.ReverseIterator(storeKey1, 1, nil, nil)
+	s.Require().NoError(err)
+	defer itr.Close()
+
+	// We should see exactly the 10 keys from store1, in reverse order,
+	// and we should *never* see a key that belongs to store2.
+	expectedI := 9
+	count := 0
+	for ; itr.Valid(); itr.Next() {
+		wantKey := []byte(fmt.Sprintf("key%03d", expectedI))
+		s.Require().Equal(wantKey, itr.Key(), "unexpected key from iterator")
+		s.Require().Equal([]byte(fmt.Sprintf("val1-%03d", expectedI)), itr.Value())
+
+		s.Require().NotContains(string(itr.Key()), "val2-")
+
+		expectedI--
+		count++
+	}
+	s.Require().Equal(10, count, "iterator should yield exactly the 10 keys in store1")
+	s.Require().NoError(itr.Error())
+
+	itr2, err := db.ReverseIterator(storeKey2, 1, nil, nil)
+	s.Require().NoError(err)
+	defer itr2.Close()
+
+	count = 0
+	for ; itr2.Valid(); itr2.Next() {
+		count++
+	}
+	s.Require().Equal(10, count, "store2 should have its own 10 keys")
 }

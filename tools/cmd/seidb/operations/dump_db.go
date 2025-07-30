@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/sei-protocol/sei-db/common/logger"
 	"github.com/sei-protocol/sei-db/config"
 	"github.com/sei-protocol/sei-db/ss"
 	"github.com/sei-protocol/sei-db/tools/cmd/seidb/benchmark"
@@ -18,7 +19,7 @@ func DumpDbCmd() *cobra.Command {
 	dumpDbCmd := &cobra.Command{
 		Use:   "dump-db",
 		Short: "For a given State Store DB, dump-db iterates over all keys and values for a specific store and writes them to a file",
-		Run:   dump,
+		Run:   executeDumpDB,
 	}
 
 	dumpDbCmd.PersistentFlags().StringP("output-dir", "o", "", "Output Directory")
@@ -30,7 +31,7 @@ func DumpDbCmd() *cobra.Command {
 	return dumpDbCmd
 }
 
-func dump(cmd *cobra.Command, _ []string) {
+func executeDumpDB(cmd *cobra.Command, _ []string) {
 	outputDir, _ := cmd.Flags().GetString("output-dir")
 	module, _ := cmd.Flags().GetString("module")
 	dbDir, _ := cmd.Flags().GetString("db-dir")
@@ -74,7 +75,7 @@ func DumpDbData(dbBackend string, module string, outputDir string, dbDir string)
 	// TODO: Defer Close Db
 	ssConfig := config.DefaultStateStoreConfig()
 	ssConfig.Backend = dbBackend
-	backend, err := ss.NewStateStore(outputDir, ssConfig)
+	backend, err := ss.NewStateStore(logger.NewNopLogger(), outputDir, ssConfig)
 	if err != nil {
 		panic(err)
 	}

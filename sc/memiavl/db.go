@@ -209,6 +209,9 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 			return nil, errorutils.Join(err, db.Close())
 		}
 	}
+	if db.streamHandler == nil {
+		fmt.Println("[Debug] DB steam handler is nil??")
+	}
 	return db, nil
 }
 
@@ -433,7 +436,7 @@ func (db *DB) pruneSnapshots() {
 		}
 
 		// truncate Rlog until the earliest remaining snapshot
-		earliestVersion, err := firstSnapshotVersion(db.dir)
+		earliestVersion, err := GetEarliestVersion(db.dir)
 		if err != nil {
 			db.logger.Error("failed to find first snapshot", "err", err)
 		}
@@ -613,10 +616,16 @@ func (db *DB) rewriteSnapshotBackground() error {
 func (db *DB) Close() error {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
+	errs := []error{}
 
-	errs := []error{
-		db.streamHandler.Close(),
+	// Close stream handler
+	if db.streamHandler != nil {
+		err := db.streamHandler.Close()
+		errs = append(errs, err)
+		db.streamHandler = nil
 	}
+
+	// Close rewrite channel
 	if db.snapshotRewriteChan != nil {
 		db.snapshotRewriteCancelFunc()
 		<-db.snapshotRewriteChan
@@ -626,8 +635,7 @@ func (db *DB) Close() error {
 
 	errs = append(errs, db.MultiTree.Close())
 
-	db.streamHandler = nil
-
+	// Close file lock
 	if db.fileLock != nil {
 		errs = append(errs, db.fileLock.Unlock())
 		errs = append(errs, db.fileLock.Destroy())
@@ -763,8 +771,8 @@ func seekSnapshot(root string, targetVersion int64) (int64, error) {
 	return snapshotVersion, nil
 }
 
-// firstSnapshotVersion returns the earliest snapshot name in the db
-func firstSnapshotVersion(root string) (int64, error) {
+// GetEarliestVersion returns the earliest snapshot name in the db
+func GetEarliestVersion(root string) (int64, error) {
 	var found int64
 	if err := traverseSnapshots(root, true, func(version int64) (bool, error) {
 		found = version

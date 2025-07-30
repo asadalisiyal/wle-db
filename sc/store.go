@@ -1,6 +1,8 @@
 package sc
 
 import (
+	"fmt"
+
 	"github.com/sei-protocol/sei-db/common/logger"
 	"github.com/sei-protocol/sei-db/common/utils"
 	"github.com/sei-protocol/sei-db/config"
@@ -23,14 +25,15 @@ func NewCommitStore(homeDir string, logger logger.Logger, config config.StateCom
 		scDir = config.Directory
 	}
 	opts := memiavl.Options{
-		Dir:                 utils.GetCommitStorePath(scDir),
-		ZeroCopy:            config.ZeroCopy,
-		AsyncCommitBuffer:   config.AsyncCommitBuffer,
-		SnapshotInterval:    config.SnapshotInterval,
-		SnapshotKeepRecent:  config.SnapshotKeepRecent,
-		SnapshotWriterLimit: config.SnapshotWriterLimit,
-		CacheSize:           config.CacheSize,
-		CreateIfMissing:     true,
+		Dir:                              utils.GetCommitStorePath(scDir),
+		ZeroCopy:                         config.ZeroCopy,
+		AsyncCommitBuffer:                config.AsyncCommitBuffer,
+		SnapshotInterval:                 config.SnapshotInterval,
+		SnapshotKeepRecent:               config.SnapshotKeepRecent,
+		SnapshotWriterLimit:              config.SnapshotWriterLimit,
+		CacheSize:                        config.CacheSize,
+		CreateIfMissing:                  true,
+		OnlyAllowExportOnSnapshotVersion: config.OnlyAllowExportOnSnapshotVersion,
 	}
 	commitStore := &CommitStore{
 		logger: logger,
@@ -39,15 +42,8 @@ func NewCommitStore(homeDir string, logger logger.Logger, config config.StateCom
 	return commitStore
 }
 
-func (cs *CommitStore) Initialize(initialStores []string) error {
-	options := cs.opts
-	options.InitialStores = initialStores
-	db, err := memiavl.OpenDB(cs.logger, 0, options)
-	if err != nil {
-		return err
-	}
-	cs.db = db
-	return nil
+func (cs *CommitStore) Initialize(initialStores []string) {
+	cs.opts.InitialStores = initialStores
 }
 
 func (cs *CommitStore) SetInitialVersion(initialVersion int64) error {
@@ -70,21 +66,27 @@ func (cs *CommitStore) Rollback(targetVersion int64) error {
 
 // copyExisting is for creating new memiavl object given existing folder
 func (cs *CommitStore) LoadVersion(targetVersion int64, copyExisting bool) (types.Committer, error) {
-	opts := cs.opts
-	opts.ReadOnly = copyExisting
+	cs.logger.Info(fmt.Sprintf("SeiDB load target memIAVL version %d, copyExisting = %v\n", targetVersion, copyExisting))
 	if copyExisting {
+		opts := cs.opts
+		opts.ReadOnly = copyExisting
 		opts.CreateIfMissing = false
-	}
-	db, err := memiavl.OpenDB(cs.logger, targetVersion, opts)
-	if err != nil {
-		return nil, err
-	}
-	if copyExisting {
+		db, err := memiavl.OpenDB(cs.logger, targetVersion, opts)
+		if err != nil {
+			return nil, err
+		}
 		return &CommitStore{
 			logger: cs.logger,
 			db:     db,
 			opts:   opts,
 		}, nil
+	}
+	if cs.db != nil {
+		cs.db.Close()
+	}
+	db, err := memiavl.OpenDB(cs.logger, targetVersion, cs.opts)
+	if err != nil {
+		return nil, err
 	}
 	cs.db = db
 	return cs, nil
@@ -100,6 +102,10 @@ func (cs *CommitStore) Version() int64 {
 
 func (cs *CommitStore) GetLatestVersion() (int64, error) {
 	return memiavl.GetLatestVersion(cs.opts.Dir)
+}
+
+func (cs *CommitStore) GetEarliestVersion() (int64, error) {
+	return memiavl.GetEarliestVersion(cs.opts.Dir)
 }
 
 func (cs *CommitStore) ApplyChangeSets(changesets []*proto.NamedChangeSet) error {
@@ -123,7 +129,7 @@ func (cs *CommitStore) GetTreeByName(name string) types.Tree {
 }
 
 func (cs *CommitStore) Exporter(version int64) (types.Exporter, error) {
-	exporter, err := memiavl.NewMultiTreeExporter(cs.opts.Dir, uint32(version), true)
+	exporter, err := memiavl.NewMultiTreeExporter(cs.opts.Dir, uint32(version), cs.opts.OnlyAllowExportOnSnapshotVersion)
 	if err != nil {
 		return nil, err
 	}

@@ -142,7 +142,7 @@ func (db *Database) GetEarliestVersion() (int64, error) {
 	panic("not implemented")
 }
 
-func (db *Database) SetEarliestVersion(version int64) error {
+func (db *Database) SetEarliestVersion(version int64, ignoreVersion bool) error {
 	panic("not implemented")
 }
 
@@ -208,6 +208,10 @@ func (db *Database) ApplyChangeset(version int64, cs *proto.NamedChangeSet) erro
 	}
 
 	return b.Write()
+}
+
+func (db *Database) ApplyChangesetAsync(version int64, changesets []*proto.NamedChangeSet) error {
+	return fmt.Errorf("not implemented")
 }
 
 func (db *Database) Prune(version int64) error {
@@ -329,4 +333,13 @@ func execPragmas(db *sql.DB, pragmas []string) error {
 		}
 	}
 	return nil
+}
+
+func (db *Database) RawImport(ch <-chan types.RawSnapshotNode) error {
+	panic("implement me")
+}
+
+// WriteBlockRangeHash writes a hash for a range of blocks to the database
+func (db *Database) WriteBlockRangeHash(storeKey string, beginBlockRange, endBlockRange int64, hash []byte) error {
+	panic("implement me")
 }

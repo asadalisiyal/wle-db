@@ -10,6 +10,7 @@ const (
 	DefaultSSPruneInterval     = 600
 	DefaultSSImportWorkers     = 1
 	DefaultSSAsyncBuffer       = 100
+	DefaultSSHashRange         = 1000000
 )
 
 type StateCommitConfig struct {
@@ -46,6 +47,10 @@ type StateCommitConfig struct {
 	// CacheSize defines the size of the cache for each memiavl store.
 	// Deprecated: this is removed, we will just rely on mmap page cache
 	CacheSize int `mapstructure:"cache-size"`
+
+	// OnlyAllowExportOnSnapshotVersion defines whether we only allow state sync
+	// snapshot creation happens after the memiavl snapshot is created
+	OnlyAllowExportOnSnapshotVersion bool `mapstructure:"only-allow-export-on-snapshot-version"`
 }
 
 type StateStoreConfig struct {
@@ -57,6 +62,9 @@ type StateStoreConfig struct {
 	// If not explicitly set, default to application home directory
 	// default to empty
 	DBDirectory string `mapstructure:"db-directory"`
+
+	// DedicatedChangelog defines if we should use a separate changelog for SS store other than sharing with SC
+	DedicatedChangelog bool `mapstructure:"dedicated-changelog"`
 
 	// Backend defines the backend database used for state-store
 	// Supported backends: pebbledb, rocksdb
@@ -80,6 +88,14 @@ type StateStoreConfig struct {
 	// ImportNumWorkers defines the number of goroutines used during import
 	// defaults to 1
 	ImportNumWorkers int `mapstructure:"import-num-workers"`
+
+	// Whether to keep last version of a key during pruning or delete
+	// defaults to true
+	KeepLastVersion bool `mapstructure:"keep-last-version"`
+
+	// Range of blocks after which a XOR hash is computed and stored
+	// defaults to 1,000,000 blocks
+	HashRange int64 `json:"hash_range"`
 }
 
 func DefaultStateCommitConfig() StateCommitConfig {
@@ -98,5 +114,7 @@ func DefaultStateStoreConfig() StateStoreConfig {
 		KeepRecent:           DefaultSSKeepRecent,
 		PruneIntervalSeconds: DefaultSSPruneInterval,
 		ImportNumWorkers:     DefaultSSImportWorkers,
+		KeepLastVersion:      true,
+		HashRange:            DefaultSSHashRange,
 	}
 }

@@ -127,7 +127,7 @@ func (db *Database) GetLatestVersion() (int64, error) {
 	return int64(binary.LittleEndian.Uint64(bz)), nil
 }
 
-func (db *Database) SetEarliestVersion(version int64) error {
+func (db *Database) SetEarliestVersion(version int64, ignoreVersion bool) error {
 	panic("not implemented")
 }
 
@@ -177,6 +177,10 @@ func (db *Database) ApplyChangeset(version int64, cs *proto.NamedChangeSet) erro
 	}
 
 	return b.Write()
+}
+
+func (db *Database) ApplyChangesetAsync(version int64, changesets []*proto.NamedChangeSet) error {
+	return fmt.Errorf("not implemented")
 }
 
 // Prune attempts to prune all versions up to and including the provided version.
@@ -369,4 +373,12 @@ func cloneAppend(bz []byte, tail []byte) (res []byte) {
 	copy(res, bz)
 	copy(res[len(bz):], tail)
 	return
+}
+func (db *Database) RawImport(ch <-chan types.RawSnapshotNode) error {
+	panic("implement me")
+}
+
+// WriteBlockRangeHash writes a hash for a range of blocks to the database
+func (db *Database) WriteBlockRangeHash(storeKey string, beginBlockRange, endBlockRange int64, hash []byte) error {
+	panic("implement me")
 }

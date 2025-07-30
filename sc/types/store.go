@@ -7,13 +7,15 @@ import (
 )
 
 type Committer interface {
-	Initialize(initialStores []string) error
+	Initialize(initialStores []string)
 
 	Commit() (int64, error)
 
 	Version() int64
 
 	GetLatestVersion() (int64, error)
+
+	GetEarliestVersion() (int64, error)
 
 	ApplyChangeSets(cs []*proto.NamedChangeSet) error
 

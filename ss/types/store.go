@@ -17,15 +17,27 @@ type StateStore interface {
 	GetLatestVersion() (int64, error)
 	SetLatestVersion(version int64) error
 	GetEarliestVersion() (int64, error)
-	SetEarliestVersion(version int64) error
+	SetEarliestVersion(version int64, ignoreVersion bool) error
+	GetLatestMigratedKey() ([]byte, error)
+	SetLatestMigratedKey(key []byte) error
+	GetLatestMigratedModule() (string, error)
+	SetLatestMigratedModule(module string) error
+	WriteBlockRangeHash(storeKey string, beginBlockRange, endBlockRange int64, hash []byte) error
+	DeleteKeysAtVersion(module string, version int64) error
 
 	// ApplyChangeset Persist the change set of a block,
 	// the `changeSet` should be ordered by (storeKey, key),
 	// the version should be latest version plus one.
 	ApplyChangeset(version int64, cs *proto.NamedChangeSet) error
 
+	// ApplyChangesetAsync Write changesets into WAL file first and apply later for async writes
+	ApplyChangesetAsync(version int64, changesets []*proto.NamedChangeSet) error
+
 	// Import the initial state of the store
 	Import(version int64, ch <-chan SnapshotNode) error
+
+	// Import the kv entries into the store in any order of version
+	RawImport(ch <-chan RawSnapshotNode) error
 
 	// Prune attempts to prune all versions up to and including the provided
 	// version argument. The operation should be idempotent. An error should be
@@ -69,4 +81,20 @@ type SnapshotNode struct {
 	StoreKey string
 	Key      []byte
 	Value    []byte
+}
+
+type RawSnapshotNode struct {
+	StoreKey string
+	Key      []byte
+	Value    []byte
+	Version  int64
+}
+
+func GetRawSnapshotNode(node SnapshotNode, version int64) RawSnapshotNode {
+	return RawSnapshotNode{
+		StoreKey: node.StoreKey,
+		Key:      node.Key,
+		Value:    node.Value,
+		Version:  version,
+	}
 }
