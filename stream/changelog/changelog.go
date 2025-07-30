@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	errorutils "github.com/sei-protocol/sei-db/common/errors"
 	"github.com/sei-protocol/sei-db/common/logger"
@@ -155,7 +156,10 @@ func (stream *Stream) ReadAt(index uint64) (*proto.ChangelogEntry, error) {
 
 // Replay will read the replay log and process each log entry with the provided function
 func (stream *Stream) Replay(start uint64, end uint64, processFn func(index uint64, entry proto.ChangelogEntry) error) error {
+	totalReadLogTime := int64(0)
+	totalProcessTime := int64(0)
 	for i := start; i <= end; i++ {
+		startTime := time.Now()
 		var entry proto.ChangelogEntry
 		bz, err := stream.log.Read(i)
 		if err != nil {
@@ -164,11 +168,15 @@ func (stream *Stream) Replay(start uint64, end uint64, processFn func(index uint
 		if err := entry.Unmarshal(bz); err != nil {
 			return fmt.Errorf("unmarshal rlog failed, %w", err)
 		}
+		totalReadLogTime += time.Since(startTime).Nanoseconds()
+		processStartTime := time.Now()
 		err = processFn(i, entry)
 		if err != nil {
 			return err
 		}
+		totalProcessTime += time.Since(processStartTime).Nanoseconds()
 	}
+	fmt.Printf("[Debug] Finished replay log from %d to %d, total read time: %d ns, total process time: %d ns\n", start, end, totalReadLogTime, totalProcessTime)
 	return nil
 }
 
