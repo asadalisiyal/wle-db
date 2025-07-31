@@ -348,6 +348,7 @@ func (t *MultiTree) Catchup(stream types.Stream[proto.ChangelogEntry], endVersio
 		for _, cs := range entry.Changesets {
 			treeName := cs.Name
 			t.TreeByName(treeName).ApplyChangeSetAsync(cs.Changeset)
+			fmt.Printf("[Debug] Replayed %d changes for tree %s at version %d\n", len(cs.Changeset.Pairs), treeName, entry.Version)
 			updatedTrees[treeName] = true
 		}
 		for _, tree := range t.trees {
