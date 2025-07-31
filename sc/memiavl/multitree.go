@@ -340,6 +340,7 @@ func (t *MultiTree) Catchup(stream types.Stream[proto.ChangelogEntry], endVersio
 	}
 
 	var replayCount = 0
+	uniqueKeysPerModules := make(map[string]map[string]struct{})
 	err = stream.Replay(firstIndex, endIndex, func(index uint64, entry proto.ChangelogEntry) error {
 		if err := t.ApplyUpgrades(entry.Upgrades); err != nil {
 			return err
@@ -348,7 +349,16 @@ func (t *MultiTree) Catchup(stream types.Stream[proto.ChangelogEntry], endVersio
 		for _, cs := range entry.Changesets {
 			treeName := cs.Name
 			t.TreeByName(treeName).ApplyChangeSetAsync(cs.Changeset)
-			fmt.Printf("[Debug] Replayed %d changes for tree %s at version %d\n", len(cs.Changeset.Pairs), treeName, entry.Version)
+			for _, pair := range cs.Changeset.Pairs {
+				if pair.Delete {
+					continue
+				}
+				if _, ok := uniqueKeysPerModules[treeName]; !ok {
+					uniqueKeysPerModules[treeName] = make(map[string]struct{})
+				}
+				uniqueKeysPerModules[treeName][string(pair.Key)] = struct{}{}
+			}
+			fmt.Printf("[Debug] Replayed %d changes for tree %s at version %d, total unique keys %d\n", len(cs.Changeset.Pairs), treeName, entry.Version, len(uniqueKeysPerModules[treeName]))
 			updatedTrees[treeName] = true
 		}
 		for _, tree := range t.trees {
