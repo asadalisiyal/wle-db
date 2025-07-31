@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/alitto/pond"
 	"github.com/cosmos/iavl"
@@ -341,15 +342,21 @@ func (t *MultiTree) Catchup(stream types.Stream[proto.ChangelogEntry], endVersio
 
 	var replayCount = 0
 	uniqueKeysPerModules := make(map[string]map[string]struct{})
+	latencyPerTree := make(map[string]int64)
 	err = stream.Replay(firstIndex, endIndex, func(index uint64, entry proto.ChangelogEntry) error {
 		if err := t.ApplyUpgrades(entry.Upgrades); err != nil {
 			return err
 		}
-		updatedTrees := make(map[string]bool)
 		for _, cs := range entry.Changesets {
+			startTime := time.Now()
 			treeName := cs.Name
 			t.TreeByName(treeName).ApplyChangeSetAsync(cs.Changeset)
+			if _, ok := latencyPerTree[treeName]; !ok {
+				latencyPerTree[treeName] = 0
+			}
+			latencyPerTree[cs.Name] += time.Since(startTime).Nanoseconds()
 			for _, pair := range cs.Changeset.Pairs {
+
 				if pair.Delete {
 					continue
 				}
@@ -357,13 +364,6 @@ func (t *MultiTree) Catchup(stream types.Stream[proto.ChangelogEntry], endVersio
 					uniqueKeysPerModules[treeName] = make(map[string]struct{})
 				}
 				uniqueKeysPerModules[treeName][string(pair.Key)] = struct{}{}
-			}
-			fmt.Printf("[Debug] Replayed %d changes for tree %s at version %d, total unique keys %d\n", len(cs.Changeset.Pairs), treeName, entry.Version, len(uniqueKeysPerModules[treeName]))
-			updatedTrees[treeName] = true
-		}
-		for _, tree := range t.trees {
-			if _, found := updatedTrees[tree.Name]; !found {
-				tree.ApplyChangeSetAsync(iavl.ChangeSet{})
 			}
 		}
 		t.lastCommitInfo.Version = utils.NextVersion(t.lastCommitInfo.Version, t.initialVersion)
@@ -377,6 +377,8 @@ func (t *MultiTree) Catchup(stream types.Stream[proto.ChangelogEntry], endVersio
 
 	for _, tree := range t.trees {
 		tree.WaitToCompleteAsyncWrite()
+		fmt.Printf("[Debug] Replayed tree %s with total unique keys %d, total latency %d\n", tree.Name, len(uniqueKeysPerModules[tree.Name]), latencyPerTree[tree.Name])
+
 	}
 
 	if err != nil {
