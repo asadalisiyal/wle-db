@@ -141,9 +141,11 @@ func (t *Tree) StartBackgroundWrite() {
 }
 
 func (t *Tree) WaitToCompleteAsyncWrite() {
-	close(t.pendingChanges)
-	t.pendingWg.Wait()
-	t.pendingChanges = nil
+	if t.pendingChanges != nil {
+		close(t.pendingChanges)
+		t.pendingWg.Wait()
+		t.pendingChanges = nil
+	}
 }
 
 func (t *Tree) Set(key, value []byte) {
