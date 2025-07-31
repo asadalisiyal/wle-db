@@ -206,7 +206,7 @@ func (stream *Stream) Replay(start uint64, end uint64, processFn func(index uint
 		}
 		totalProcessTime += time.Since(processStartTime).Nanoseconds()
 	}
-	fmt.Printf("[Debug] Finished replay log from %d to %d, total read time: %d ns, total process time: %d ns\n", start, end, totalReadLogTime, totalProcessTime)
+	fmt.Printf("[Debug] Finished replaying log from %d to %d, total read time: %d ns, total process time: %d ns\n", start, end, totalReadLogTime, totalProcessTime)
 	return nil
 }
 
