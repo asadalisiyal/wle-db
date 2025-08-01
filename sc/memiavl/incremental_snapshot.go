@@ -101,9 +101,8 @@ func (hsm *HybridSnapshotManager) CreateSnapshot(ctx context.Context, mtree *Mul
 		hsm.lastIncremental = currentVersion
 	} else if err := hsm.createFullSnapshot(ctx, mtree, snapshotDir, currentVersion); err != nil {
 		return fmt.Errorf("failed to create full snapshot: %w", err)
-	} else {
-		hsm.lastFull = currentVersion
 	}
+	hsm.lastFull = currentVersion
 
 	return nil
 }

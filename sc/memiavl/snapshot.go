@@ -434,7 +434,7 @@ func (t *Tree) writeModifiedNodesRecursive(w *snapshotWriter, node Node, baseVer
 		}
 
 		totalCount := leftCount + rightCount
-		err = w.writeBranch(node.Version(), uint32(totalCount), node.Height(),
+		err = w.writeBranch(node.Version(), totalCount, node.Height(),
 			uint8(w.leafCounter-w.branchCounter), keyLeaf, node.Hash())
 		if err != nil {
 			return 0, err
@@ -765,11 +765,9 @@ func (ms *MergedSnapshot) merge() error {
 				modifiedNodes[key] = snapshotNode
 			}
 			exporter.Close()
-		} else {
-			// This is a metadata-only snapshot, we need to reconstruct from the tree
-			// For now, we'll skip this and rely on the base snapshot
-			// In a real implementation, we'd need to track modifications differently
 		}
+		// Note: metadata-only snapshots are skipped for now
+		// In a real implementation, we'd need to track modifications differently
 	}
 
 	// Create a new snapshot writer to build the merged tree
@@ -789,10 +787,9 @@ func (ms *MergedSnapshot) merge() error {
 		mergedKVs = mergedData.kvs
 		mergedNodesLayout = mergedData.nodesLayout
 		mergedLeavesLayout = mergedData.leavesLayout
-	} else {
+	} else if len(modifiedNodes) > 0 {
 		// Empty base snapshot, just use incremental data
-		if len(modifiedNodes) > 0 {
-			mergedData, err := ms.buildTreeFromNodes(modifiedNodes)
+		mergedData, err := ms.buildTreeFromNodes(modifiedNodes)
 			if err != nil {
 				return fmt.Errorf("failed to build tree from nodes: %w", err)
 			}
@@ -999,9 +996,9 @@ func (ms *MergedSnapshot) buildTreeFromNodes(nodes map[string]*types.SnapshotNod
 }
 
 // mergeNodes merges base nodes with incremental nodes
-func (ms *MergedSnapshot) mergeNodes(baseNodes, incNodes []byte) ([]byte, error) {
+func (ms *MergedSnapshot) mergeNodes(baseNodes, incNodes []byte) []byte {
 	if len(incNodes) == 0 {
-		return baseNodes, nil
+		return baseNodes
 	}
 
 	// For now, we'll append incremental nodes to base nodes
@@ -1010,13 +1007,13 @@ func (ms *MergedSnapshot) mergeNodes(baseNodes, incNodes []byte) ([]byte, error)
 	copy(merged, baseNodes)
 	copy(merged[len(baseNodes):], incNodes)
 
-	return merged, nil
+	return merged
 }
 
 // mergeLeaves merges base leaves with incremental leaves
-func (ms *MergedSnapshot) mergeLeaves(baseLeaves, incLeaves []byte) ([]byte, error) {
+func (ms *MergedSnapshot) mergeLeaves(baseLeaves, incLeaves []byte) []byte {
 	if len(incLeaves) == 0 {
-		return baseLeaves, nil
+		return baseLeaves
 	}
 
 	// Append incremental leaves to base leaves
@@ -1024,7 +1021,7 @@ func (ms *MergedSnapshot) mergeLeaves(baseLeaves, incLeaves []byte) ([]byte, err
 	copy(merged, baseLeaves)
 	copy(merged[len(baseLeaves):], incLeaves)
 
-	return merged, nil
+	return merged
 }
 
 // createMmapFromData creates a memory-mapped file from data
