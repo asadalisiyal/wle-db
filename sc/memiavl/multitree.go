@@ -7,15 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 
 	"github.com/alitto/pond"
+	"golang.org/x/exp/slices"
+
 	"github.com/cosmos/iavl"
 	"github.com/sei-protocol/sei-db/common/errors"
 	"github.com/sei-protocol/sei-db/common/utils"
 	"github.com/sei-protocol/sei-db/proto"
 	"github.com/sei-protocol/sei-db/stream/types"
-	"golang.org/x/exp/slices"
 )
 
 const MetadataFileName = "__metadata"
@@ -54,9 +54,6 @@ type MultiTree struct {
 
 	// the initial metadata loaded from disk snapshot
 	metadata proto.MultiTreeMetadata
-
-	// mutex for thread-safe access to MultiTree fields
-	mtx sync.RWMutex
 }
 
 func NewEmptyMultiTree(initialVersion uint32, cacheSize int) *MultiTree {
@@ -122,8 +119,6 @@ func LoadMultiTree(dir string, zeroCopy bool, cacheSize int) (*MultiTree, error)
 
 // TreeByName returns the tree by name, returns nil if not found
 func (t *MultiTree) TreeByName(name string) *Tree {
-	t.mtx.RLock()
-	defer t.mtx.RUnlock()
 	if i, ok := t.treesByName[name]; ok {
 		return t.trees[i].Tree
 	}
@@ -179,13 +174,13 @@ func (t *MultiTree) Copy(cacheSize int) *MultiTree {
 	}
 
 	return &MultiTree{
-		initialVersion:  t.initialVersion,
-		zeroCopy:        t.zeroCopy,
-		cacheSize:       cacheSize,
-		trees:           trees,
-		treesByName:     treesByName,
-		lastCommitInfo:  t.lastCommitInfo,
-		metadata:        t.metadata,
+		initialVersion: t.initialVersion,
+		zeroCopy:       t.zeroCopy,
+		cacheSize:      cacheSize,
+		trees:          trees,
+		treesByName:    treesByName,
+		lastCommitInfo: t.lastCommitInfo,
+		metadata:       t.metadata,
 		// mtx is not copied - new instance gets a fresh mutex
 	}
 }
@@ -449,9 +444,6 @@ func (t *MultiTree) Close() error {
 }
 
 func (t *MultiTree) ReplaceWith(other *MultiTree) error {
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
-
 	errs := make([]error, 0, len(t.trees))
 	for _, entry := range t.trees {
 		errs = append(errs, entry.Tree.ReplaceWith(other.TreeByName(entry.Name)))
