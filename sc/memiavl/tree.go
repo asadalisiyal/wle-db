@@ -80,6 +80,10 @@ func NewFromSnapshot(snapshot SnapshotInterface, zeroCopy bool, _ int) *Tree {
 			tree.root = s.RootNode()
 		case *MergedSnapshot:
 			tree.root = s.RootNode()
+		case *OverlaySnapshot:
+			// OverlaySnapshot doesn't support RootNode() directly
+			// We'll need to create a tree from the overlay
+			panic("OverlaySnapshot not supported in NewFromSnapshot - use LoadSnapshotWithMerge instead")
 		default:
 			panic(fmt.Sprintf("unknown snapshot type: %T", snapshot))
 		}

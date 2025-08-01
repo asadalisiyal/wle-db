@@ -309,7 +309,7 @@ func readIncrementalSnapshotMetadata(snapshotDir string) (*IncrementalSnapshotMe
 	}
 
 	// Read tree names
-	offset := int(SizeIncrementalMetadata)
+	offset := SizeIncrementalMetadata
 	for i := uint32(0); i < treeCount; i++ {
 		if offset+4 > len(data) {
 			return nil, fmt.Errorf("incremental metadata file truncated at tree name %d", i)

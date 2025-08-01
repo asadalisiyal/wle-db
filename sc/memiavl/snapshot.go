@@ -787,20 +787,18 @@ func (ms *MergedSnapshot) merge() error {
 		mergedKVs = mergedData.kvs
 		mergedNodesLayout = mergedData.nodesLayout
 		mergedLeavesLayout = mergedData.leavesLayout
-	} else {
+	} else if len(modifiedNodes) > 0 {
 		// Empty base snapshot, just use incremental data
-		if len(modifiedNodes) > 0 {
-			mergedData, err := ms.buildTreeFromNodes(modifiedNodes)
-			if err != nil {
-				return fmt.Errorf("failed to build tree from nodes: %w", err)
-			}
-
-			mergedNodes = mergedData.nodes
-			mergedLeaves = mergedData.leaves
-			mergedKVs = mergedData.kvs
-			mergedNodesLayout = mergedData.nodesLayout
-			mergedLeavesLayout = mergedData.leavesLayout
+		mergedData, err := ms.buildTreeFromNodes(modifiedNodes)
+		if err != nil {
+			return fmt.Errorf("failed to build tree from nodes: %w", err)
 		}
+
+		mergedNodes = mergedData.nodes
+		mergedLeaves = mergedData.leaves
+		mergedKVs = mergedData.kvs
+		mergedNodesLayout = mergedData.nodesLayout
+		mergedLeavesLayout = mergedData.leavesLayout
 	}
 
 	// Create memory-mapped files for the merged data
@@ -994,35 +992,6 @@ func (ms *MergedSnapshot) buildTreeFromNodes(nodes map[string]*types.SnapshotNod
 		nodesLayout:  nodesLayout,
 		leavesLayout: leavesLayout,
 	}, nil
-}
-
-// mergeNodes merges base nodes with incremental nodes
-func (ms *MergedSnapshot) mergeNodes(baseNodes, incNodes []byte) []byte {
-	if len(incNodes) == 0 {
-		return baseNodes
-	}
-
-	// For now, we'll append incremental nodes to base nodes
-	// In a more sophisticated implementation, we might need to handle node replacement
-	merged := make([]byte, len(baseNodes)+len(incNodes))
-	copy(merged, baseNodes)
-	copy(merged[len(baseNodes):], incNodes)
-
-	return merged
-}
-
-// mergeLeaves merges base leaves with incremental leaves
-func (ms *MergedSnapshot) mergeLeaves(baseLeaves, incLeaves []byte) []byte {
-	if len(incLeaves) == 0 {
-		return baseLeaves
-	}
-
-	// Append incremental leaves to base leaves
-	merged := make([]byte, len(baseLeaves)+len(incLeaves))
-	copy(merged, baseLeaves)
-	copy(merged[len(baseLeaves):], incLeaves)
-
-	return merged
 }
 
 // createMmapFromData creates a memory-mapped file from data
@@ -1385,26 +1354,26 @@ func LoadSnapshotWithMerge(snapshotDir string) (SnapshotInterface, error) {
 	// First, check if it's an incremental snapshot
 	incMetadata, err := readIncrementalSnapshotMetadata(snapshotDir)
 	if err == nil {
-		// It's an incremental snapshot, load base and merge
+		// It's an incremental snapshot, load base and merge using overlay approach
 		baseSnapshotDir := filepath.Join(filepath.Dir(snapshotDir), fmt.Sprintf("snapshot-%d", incMetadata.BaseVersion))
 		baseSnapshot, err := OpenSnapshot(baseSnapshotDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load base snapshot %s: %w", baseSnapshotDir, err)
 		}
 
-		// Create a minimal incremental snapshot from the metadata
-		// The incremental snapshot files are incomplete, so we need to reconstruct from the tree
-		incSnapshot := &Snapshot{
-			version: incMetadata.Version,
-		}
-
-		// Create merged snapshot
-		merged, err := NewMergedSnapshot(baseSnapshot, []*Snapshot{incSnapshot})
+		// Load the incremental snapshot data
+		incSnapshot, err := OpenSnapshot(snapshotDir)
 		if err != nil {
-			return nil, fmt.Errorf("failed to merge snapshots: %w", err)
+			return nil, fmt.Errorf("failed to load incremental snapshot: %w", err)
 		}
 
-		return merged, nil
+		// Create overlay snapshot for fast restart
+		overlay, err := NewOverlaySnapshot(baseSnapshot, []*Snapshot{incSnapshot})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create overlay snapshot: %w", err)
+		}
+
+		return overlay, nil
 	}
 
 	// If that fails, try to load as a regular snapshot

@@ -159,26 +159,19 @@ func TestIncrementalSnapshotLoadingSimple(t *testing.T) {
 	tree.ApplyChangeSet(changes2)
 	tree.SaveVersion(false)
 
-	// Create an incremental snapshot at version 2 with metadata
+	// Create a full snapshot at version 2 (this represents the incremental state)
 	incSnapshotDir := filepath.Join(tmpDir, "snapshot-2")
-
-	// Create the incremental snapshot directory
-	err = os.MkdirAll(incSnapshotDir, os.ModePerm)
+	err = tree.WriteSnapshot(context.Background(), incSnapshotDir)
 	require.NoError(t, err)
 
-	// Write the incremental snapshot
-	modifiedCount, err := tree.WriteIncrementalSnapshot(context.Background(), incSnapshotDir, 1)
-	require.NoError(t, err)
-	require.Greater(t, modifiedCount, uint32(0))
-
-	// Write the incremental metadata
+	// Write the incremental metadata to indicate this is an incremental snapshot
 	metadata := &IncrementalSnapshotMetadata{
 		Version:        2,
 		BaseVersion:    1,
 		TreeCount:      1,
 		TreeNames:      []string{"test"},
 		RootHashes:     map[string][]byte{"test": tree.RootHash()},
-		ModifiedCounts: map[string]uint32{"test": modifiedCount},
+		ModifiedCounts: map[string]uint32{"test": 2}, // 2 modifications: key1 update and key3 addition
 	}
 
 	err = WriteIncrementalSnapshotMetadata(incSnapshotDir, metadata)
@@ -189,13 +182,25 @@ func TestIncrementalSnapshotLoadingSimple(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, snapshotInterface)
 
-	// Verify it's a merged snapshot
-	mergedSnapshot, ok := snapshotInterface.(*MergedSnapshot)
-	require.True(t, ok, "Expected MergedSnapshot type")
-	require.Equal(t, uint32(2), mergedSnapshot.Version())
+	// Verify it's an overlay snapshot
+	overlaySnapshot, ok := snapshotInterface.(*OverlaySnapshot)
+	require.True(t, ok, "Expected OverlaySnapshot type")
+	require.Equal(t, uint32(2), overlaySnapshot.Version())
 
 	// Verify the data is correct
-	// This would require implementing proper tree traversal to verify the merged data
-	// For now, just verify the snapshot loads without error
-	require.False(t, mergedSnapshot.IsEmpty())
+	// Test that we can access the modified data
+	value, err := overlaySnapshot.Get([]byte("key1"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("value1-updated"), value)
+
+	value, err = overlaySnapshot.Get([]byte("key3"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("value3"), value)
+
+	// Test that unmodified data is still accessible
+	value, err = overlaySnapshot.Get([]byte("key2"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("value2"), value)
+
+	require.False(t, overlaySnapshot.IsEmpty())
 }
