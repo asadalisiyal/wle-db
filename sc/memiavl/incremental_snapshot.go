@@ -73,19 +73,26 @@ func (hsm *HybridSnapshotManager) ShouldCreateSnapshot(currentVersion uint32) (b
 	if currentVersion%hsm.config.FullSnapshotInterval == 0 {
 		return true, false // full snapshot
 	}
-
 	// Check if we should create an incremental snapshot
 	if hsm.config.IncrementalSnapshotInterval > 0 && currentVersion%hsm.config.IncrementalSnapshotInterval == 0 {
 		return true, true // incremental snapshot (should create, is incremental)
 	}
-
 	return false, false // no snapshot
 }
 
 // CreateSnapshot creates either a full or incremental snapshot based on the current version
 func (hsm *HybridSnapshotManager) CreateSnapshot(ctx context.Context, mtree *MultiTree, currentVersion uint32, snapshotDir string) error {
-	// For RewriteSnapshot, always create a snapshot regardless of interval
 	shouldCreateFull, shouldCreateIncremental := hsm.ShouldCreateSnapshot(currentVersion)
+	// If no snapshot should be created according to intervals, create a full snapshot anyway
+	// This handles the case where RewriteSnapshot is called regardless of intervals
+	if !shouldCreateFull && !shouldCreateIncremental {
+		err := hsm.createFullSnapshot(ctx, mtree, snapshotDir, currentVersion)
+		if err != nil {
+			return err
+		}
+		hsm.lastFull = currentVersion
+		return nil
+	}
 	if shouldCreateFull {
 		err := hsm.createFullSnapshot(ctx, mtree, snapshotDir, currentVersion)
 		if err != nil {
