@@ -787,9 +787,10 @@ func (ms *MergedSnapshot) merge() error {
 		mergedKVs = mergedData.kvs
 		mergedNodesLayout = mergedData.nodesLayout
 		mergedLeavesLayout = mergedData.leavesLayout
-	} else if len(modifiedNodes) > 0 {
+	} else {
 		// Empty base snapshot, just use incremental data
-		mergedData, err := ms.buildTreeFromNodes(modifiedNodes)
+		if len(modifiedNodes) > 0 {
+			mergedData, err := ms.buildTreeFromNodes(modifiedNodes)
 			if err != nil {
 				return fmt.Errorf("failed to build tree from nodes: %w", err)
 			}
