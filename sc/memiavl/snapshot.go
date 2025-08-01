@@ -753,7 +753,7 @@ func (ms *MergedSnapshot) merge() error {
 	// Collect all modified nodes from incremental snapshots
 	for _, incSnapshot := range ms.incrementalSnapshots {
 		// Check if this incremental snapshot has actual data or is just metadata
-		if incSnapshot.nodes != nil && len(incSnapshot.nodes) > 0 {
+		if len(incSnapshot.nodes) > 0 {
 			// This snapshot has actual data, export it
 			exporter := incSnapshot.Export()
 			for {
@@ -1025,20 +1025,6 @@ func (ms *MergedSnapshot) mergeLeaves(baseLeaves, incLeaves []byte) ([]byte, err
 	copy(merged[len(baseLeaves):], incLeaves)
 
 	return merged, nil
-}
-
-// mergeKVs merges base KVs with incremental KVs
-func (ms *MergedSnapshot) mergeKVs(baseKVs, incKVs []byte) []byte {
-	if len(incKVs) == 0 {
-		return baseKVs
-	}
-
-	// Append incremental KVs to base KVs
-	merged := make([]byte, len(baseKVs)+len(incKVs))
-	copy(merged, baseKVs)
-	copy(merged[len(baseKVs):], incKVs)
-
-	return merged
 }
 
 // createMmapFromData creates a memory-mapped file from data

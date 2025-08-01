@@ -181,7 +181,6 @@ func (t *MultiTree) Copy(cacheSize int) *MultiTree {
 		treesByName:    treesByName,
 		lastCommitInfo: t.lastCommitInfo,
 		metadata:       t.metadata,
-		// mtx is not copied - new instance gets a fresh mutex
 	}
 }
 
