@@ -1165,9 +1165,8 @@ func (node MergedPersistedNode) Get(key []byte) ([]byte, uint32) {
 	// For branch nodes, traverse down the tree
 	if bytes.Compare(key, node.Key()) < 0 {
 		return node.Left().Get(key)
-	} else {
-		return node.Right().Get(key)
 	}
+	return node.Right().Get(key)
 }
 
 func (node MergedPersistedNode) GetByIndex(leafIndex uint32) ([]byte, []byte) {
@@ -1188,9 +1187,8 @@ func (node MergedPersistedNode) GetByIndex(leafIndex uint32) ([]byte, []byte) {
 		keyLeaf := data.KeyLeaf()
 		if leafIndex < keyLeaf {
 			return node.Left().GetByIndex(leafIndex)
-		} else {
-			return node.Right().GetByIndex(leafIndex)
 		}
+		return node.Right().GetByIndex(leafIndex)
 	}
 
 	return nil, nil
