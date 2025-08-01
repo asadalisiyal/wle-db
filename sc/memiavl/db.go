@@ -54,10 +54,8 @@ type DB struct {
 	snapshotRewriteChan chan snapshotResult
 	// context cancel function to cancel the snapshot rewrite goroutine
 	snapshotRewriteCancelFunc context.CancelFunc
-	// the number of old snapshots to keep (excluding the latest one)
-	snapshotKeepRecent uint32
-	// block interval to take a new snapshot
-	snapshotInterval uint32
+	// snapshotConfig contains the snapshot configuration
+	snapshotConfig *SnapshotConfig
 	// make sure only one snapshot rewrite is running
 	pruneSnapshotLock sync.Mutex
 
@@ -192,6 +190,7 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 
 	// Initialize hybrid snapshot manager
 	snapshotConfig := &SnapshotConfig{
+		SnapshotKeepRecent:          opts.SnapshotKeepRecent,
 		FullSnapshotInterval:        opts.SnapshotInterval,
 		IncrementalSnapshotInterval: opts.IncrementalSnapshotInterval,
 		IncrementalSnapshotTrees:    opts.IncrementalSnapshotTrees,
@@ -206,8 +205,7 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 		fileLock:           fileLock,
 		readOnly:           opts.ReadOnly,
 		streamHandler:      streamHandler,
-		snapshotKeepRecent: opts.SnapshotKeepRecent,
-		snapshotInterval:   opts.SnapshotInterval,
+		snapshotConfig:     snapshotConfig,
 		snapshotWriterPool: workerPool,
 		snapshotManager:    snapshotManager,
 	}
@@ -423,7 +421,7 @@ func (db *DB) pruneSnapshots() {
 			return
 		}
 
-		counter := db.snapshotKeepRecent
+		counter := db.snapshotConfig.SnapshotKeepRecent
 		if err := traverseSnapshots(db.dir, false, func(version int64) (bool, error) {
 			if version >= currentVersion {
 				// ignore any newer snapshot directories, there could be ongoning snapshot rewrite.
@@ -566,7 +564,7 @@ func (db *DB) reloadMultiTree(mtree *MultiTree) error {
 
 // rewriteIfApplicable execute the snapshot rewrite strategy according to current height
 func (db *DB) rewriteIfApplicable(height int64) {
-	if height%int64(db.snapshotInterval) != 0 {
+	if height%int64(db.snapshotConfig.FullSnapshotInterval) != 0 {
 		return
 	}
 

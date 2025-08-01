@@ -52,6 +52,7 @@ type HybridSnapshotManager struct {
 
 // SnapshotConfig contains configuration for snapshot creation
 type SnapshotConfig struct {
+	SnapshotKeepRecent          uint32
 	FullSnapshotInterval        uint32
 	IncrementalSnapshotInterval uint32
 	IncrementalSnapshotTrees    []string
@@ -75,7 +76,7 @@ func (hsm *HybridSnapshotManager) ShouldCreateSnapshot(currentVersion uint32) (b
 
 	// Check if we should create an incremental snapshot
 	if hsm.config.IncrementalSnapshotInterval > 0 && currentVersion%hsm.config.IncrementalSnapshotInterval == 0 {
-		return true, true // incremental snapshot
+		return false, true // incremental snapshot
 	}
 
 	return false, false // no snapshot
@@ -84,13 +85,15 @@ func (hsm *HybridSnapshotManager) ShouldCreateSnapshot(currentVersion uint32) (b
 // CreateSnapshot creates either a full or incremental snapshot based on the current version
 func (hsm *HybridSnapshotManager) CreateSnapshot(ctx context.Context, mtree *MultiTree, currentVersion uint32, snapshotDir string) error {
 	// For RewriteSnapshot, always create a snapshot regardless of interval
-	shouldCreate, isIncremental := hsm.ShouldCreateSnapshot(currentVersion)
-	if !shouldCreate {
-		// If not scheduled, create a full snapshot anyway
-		isIncremental = false
+	shouldCreateFull, shouldCreateIncremental := hsm.ShouldCreateSnapshot(currentVersion)
+	if shouldCreateFull {
+		err := hsm.createFullSnapshot(ctx, mtree, snapshotDir, currentVersion)
+		if err != nil {
+			return err
+		}
+		hsm.lastFull = currentVersion
 	}
-
-	if isIncremental {
+	if shouldCreateIncremental {
 		// Find the base version for incremental snapshot
 		baseVersion := hsm.findBaseVersion(currentVersion)
 
@@ -99,11 +102,7 @@ func (hsm *HybridSnapshotManager) CreateSnapshot(ctx context.Context, mtree *Mul
 			return fmt.Errorf("failed to create incremental snapshot: %w", err)
 		}
 		hsm.lastIncremental = currentVersion
-	} else if err := hsm.createFullSnapshot(ctx, mtree, snapshotDir, currentVersion); err != nil {
-		return fmt.Errorf("failed to create full snapshot: %w", err)
 	}
-	hsm.lastFull = currentVersion
-
 	return nil
 }
 
