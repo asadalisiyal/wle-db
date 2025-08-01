@@ -178,10 +178,16 @@ func (t *MultiTree) Copy(cacheSize int) *MultiTree {
 		treesByName[entry.Name] = i
 	}
 
-	clone := *t
-	clone.trees = trees
-	clone.treesByName = treesByName
-	return &clone
+	return &MultiTree{
+		initialVersion:  t.initialVersion,
+		zeroCopy:        t.zeroCopy,
+		cacheSize:       cacheSize,
+		trees:           trees,
+		treesByName:     treesByName,
+		lastCommitInfo:  t.lastCommitInfo,
+		metadata:        t.metadata,
+		// mtx is not copied - new instance gets a fresh mutex
+	}
 }
 
 func (t *MultiTree) Version() int64 {

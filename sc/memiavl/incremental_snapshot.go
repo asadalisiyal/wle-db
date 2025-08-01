@@ -99,11 +99,9 @@ func (hsm *HybridSnapshotManager) CreateSnapshot(ctx context.Context, mtree *Mul
 			return fmt.Errorf("failed to create incremental snapshot: %w", err)
 		}
 		hsm.lastIncremental = currentVersion
+	} else if err := hsm.createFullSnapshot(ctx, mtree, snapshotDir, currentVersion); err != nil {
+		return fmt.Errorf("failed to create full snapshot: %w", err)
 	} else {
-		// Create full snapshot using existing mechanism
-		if err := hsm.createFullSnapshot(ctx, mtree, snapshotDir, currentVersion); err != nil {
-			return fmt.Errorf("failed to create full snapshot: %w", err)
-		}
 		hsm.lastFull = currentVersion
 	}
 
@@ -363,7 +361,7 @@ func readIncrementalSnapshotMetadata(snapshotDir string) (*IncrementalSnapshotMe
 }
 
 // writeMultiTreeMetadata writes the multi-tree metadata for full snapshots
-func writeMultiTreeMetadata(snapshotDir string, version uint32, mtree *MultiTree) error {
+func writeMultiTreeMetadata(snapshotDir string, _ uint32, mtree *MultiTree) error {
 	metadata := &proto.MultiTreeMetadata{
 		CommitInfo:     &mtree.lastCommitInfo,
 		InitialVersion: int64(mtree.initialVersion),
