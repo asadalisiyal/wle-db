@@ -76,7 +76,7 @@ func (hsm *HybridSnapshotManager) ShouldCreateSnapshot(currentVersion uint32) (b
 
 	// Check if we should create an incremental snapshot
 	if hsm.config.IncrementalSnapshotInterval > 0 && currentVersion%hsm.config.IncrementalSnapshotInterval == 0 {
-		return false, true // incremental snapshot
+		return true, true // incremental snapshot (should create, is incremental)
 	}
 
 	return false, false // no snapshot
@@ -170,7 +170,32 @@ func (hsm *HybridSnapshotManager) createFullSnapshot(ctx context.Context, mtree 
 }
 
 // findBaseVersion finds the most recent snapshot version that's less than currentVersion
+// This function first tries to scan the filesystem for actual snapshots, accounting for delays in snapshot creation.
+// If no snapshots are found, it falls back to the calculated approach for testing scenarios.
 func (hsm *HybridSnapshotManager) findBaseVersion(currentVersion uint32) uint32 {
+	var mostRecentSnapshot uint32
+
+	// First, try to scan the filesystem for actual snapshots
+	err := traverseSnapshots(hsm.dbDir, false, func(version int64) (bool, error) {
+		// Convert to uint32 for comparison
+		snapshotVersion := uint32(version)
+
+		// We want the most recent snapshot that's less than currentVersion
+		if snapshotVersion < currentVersion {
+			mostRecentSnapshot = snapshotVersion
+			return true, nil // Stop traversal, we found the most recent
+		}
+		return false, nil // Continue traversal
+	})
+
+	// If we found a snapshot, return it
+	if err == nil && mostRecentSnapshot > 0 {
+		return mostRecentSnapshot
+	}
+
+	// If traverseSnapshots failed (e.g., directory doesn't exist), we'll fall back to calculated approach
+
+	// Fallback to calculated approach for testing scenarios or when no snapshots exist
 	// First, check if there's a full snapshot before currentVersion
 	fullSnapshotVersion := (currentVersion / hsm.config.FullSnapshotInterval) * hsm.config.FullSnapshotInterval
 	if fullSnapshotVersion < currentVersion && fullSnapshotVersion > 0 {
