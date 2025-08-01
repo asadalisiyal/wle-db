@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 
 	"github.com/alitto/pond"
 	"github.com/cosmos/iavl"
@@ -53,6 +54,9 @@ type MultiTree struct {
 
 	// the initial metadata loaded from disk snapshot
 	metadata proto.MultiTreeMetadata
+
+	// mutex for thread-safe access to MultiTree fields
+	mtx sync.RWMutex
 }
 
 func NewEmptyMultiTree(initialVersion uint32, cacheSize int) *MultiTree {
@@ -83,11 +87,14 @@ func LoadMultiTree(dir string, zeroCopy bool, cacheSize int) (*MultiTree, error)
 		}
 		name := e.Name()
 		treeNames = append(treeNames, name)
-		snapshot, err := OpenSnapshot(filepath.Join(dir, name))
+
+		// Use the new loading mechanism that handles incremental snapshots
+		snapshotInterface, err := LoadSnapshotWithMerge(filepath.Join(dir, name))
 		if err != nil {
 			return nil, err
 		}
-		treeMap[name] = NewFromSnapshot(snapshot, zeroCopy, cacheSize)
+
+		treeMap[name] = NewFromSnapshot(snapshotInterface, zeroCopy, cacheSize)
 	}
 
 	slices.Sort(treeNames)
@@ -115,6 +122,8 @@ func LoadMultiTree(dir string, zeroCopy bool, cacheSize int) (*MultiTree, error)
 
 // TreeByName returns the tree by name, returns nil if not found
 func (t *MultiTree) TreeByName(name string) *Tree {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
 	if i, ok := t.treesByName[name]; ok {
 		return t.trees[i].Tree
 	}
@@ -434,6 +443,9 @@ func (t *MultiTree) Close() error {
 }
 
 func (t *MultiTree) ReplaceWith(other *MultiTree) error {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+
 	errs := make([]error, 0, len(t.trees))
 	for _, entry := range t.trees {
 		errs = append(errs, entry.Tree.ReplaceWith(other.TreeByName(entry.Name)))

@@ -77,6 +77,9 @@ type DB struct {
 	mtx sync.Mutex
 	// worker goroutine IdleTimeout = 5s
 	snapshotWriterPool *pond.WorkerPool
+
+	// hybrid snapshot manager for incremental snapshots
+	snapshotManager *HybridSnapshotManager
 }
 
 const (
@@ -187,6 +190,15 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 	// create worker pool. recv tasks to write snapshot
 	workerPool := pond.New(opts.SnapshotWriterLimit, opts.SnapshotWriterLimit*10)
 
+	// Initialize hybrid snapshot manager
+	snapshotConfig := &SnapshotConfig{
+		FullSnapshotInterval:        opts.SnapshotInterval,
+		IncrementalSnapshotInterval: opts.IncrementalSnapshotInterval,
+		IncrementalSnapshotTrees:    opts.IncrementalSnapshotTrees,
+		SnapshotWriterLimit:         opts.SnapshotWriterLimit,
+	}
+	snapshotManager := NewHybridSnapshotManager(snapshotConfig, opts.Dir)
+
 	db := &DB{
 		MultiTree:          *mtree,
 		logger:             logger,
@@ -197,6 +209,7 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 		snapshotKeepRecent: opts.SnapshotKeepRecent,
 		snapshotInterval:   opts.SnapshotInterval,
 		snapshotWriterPool: workerPool,
+		snapshotManager:    snapshotManager,
 	}
 
 	if !db.readOnly && db.Version() == 0 && len(opts.InitialStores) > 0 {
@@ -497,6 +510,7 @@ func (db *DB) copy(cacheSize int) *DB {
 		logger:             db.logger,
 		dir:                db.dir,
 		snapshotWriterPool: db.snapshotWriterPool,
+		snapshotManager:    db.snapshotManager,
 	}
 }
 
@@ -509,12 +523,18 @@ func (db *DB) RewriteSnapshot(ctx context.Context) error {
 		return errReadOnly
 	}
 
+	// Use hybrid snapshot manager to determine if we should create full or incremental snapshot
+	// Use MultiTree.Version() directly to avoid deadlock since we already hold the lock
+	currentVersion := uint32(db.MultiTree.Version())
 	snapshotDir := snapshotName(db.lastCommitInfo.Version)
 	tmpDir := snapshotDir + "-tmp"
 	path := filepath.Join(db.dir, tmpDir)
-	if err := db.MultiTree.WriteSnapshot(ctx, path, db.snapshotWriterPool); err != nil {
+
+	// Create snapshot in temporary directory
+	if err := db.snapshotManager.CreateSnapshot(ctx, &db.MultiTree, currentVersion, path); err != nil {
 		return errorutils.Join(err, os.RemoveAll(path))
 	}
+
 	if err := os.Rename(path, filepath.Join(db.dir, snapshotDir)); err != nil {
 		return err
 	}
