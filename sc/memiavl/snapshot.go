@@ -489,17 +489,14 @@ func writeSnapshot(
 		if err := fpKVs.Sync(); err != nil {
 			return err
 		}
-		fadviseDontNeed(fpKVs.Fd())
 
 		if err := fpLeaves.Sync(); err != nil {
 			return err
 		}
-		fadviseDontNeed(fpLeaves.Fd())
 
 		if err := fpNodes.Sync(); err != nil {
 			return err
 		}
-		fadviseDontNeed(fpNodes.Fd())
 
 	}
 
@@ -554,7 +551,7 @@ func newSnapshotWriter(ctx context.Context, nodesWriter, leavesWriter, kvsWriter
 
 func gzipCompressFast(data []byte) ([]byte, error) {
 	var buf bytes.Buffer
-	w, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	w, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
 	if err != nil {
 		return nil, err
 	}
