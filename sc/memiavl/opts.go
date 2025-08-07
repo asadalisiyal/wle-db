@@ -2,6 +2,7 @@ package memiavl
 
 import (
 	"errors"
+	"runtime"
 
 	"github.com/sei-protocol/sei-db/config"
 )
@@ -58,7 +59,7 @@ func (opts *Options) FillDefaults() {
 	}
 
 	if opts.SnapshotWriterLimit <= 0 {
-		opts.SnapshotWriterLimit = config.DefaultSnapshotWriterLimit
+		opts.SnapshotWriterLimit = runtime.NumCPU()
 	}
 
 	if opts.CacheSize < 0 {

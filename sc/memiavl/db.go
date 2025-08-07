@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,7 +18,6 @@ import (
 	errorutils "github.com/sei-protocol/sei-db/common/errors"
 	"github.com/sei-protocol/sei-db/common/logger"
 	"github.com/sei-protocol/sei-db/common/utils"
-	"github.com/sei-protocol/sei-db/config"
 	"github.com/sei-protocol/sei-db/proto"
 	"github.com/sei-protocol/sei-db/stream/changelog"
 	"github.com/sei-protocol/sei-db/stream/types"
@@ -492,10 +492,10 @@ func (db *DB) copy(cacheSize int) *DB {
 	mtree := db.MultiTree.Copy(cacheSize)
 
 	return &DB{
-		MultiTree:          *mtree,
-		logger:             db.logger,
-		dir:                db.dir,
-		snapshotWriterPool: db.snapshotWriterPool,
+		MultiTree:           *mtree,
+		logger:              db.logger,
+		dir:                 db.dir,
+		snapshotWriterPool:  db.snapshotWriterPool,
 		snapshotCompression: db.snapshotCompression,
 	}
 }
@@ -588,7 +588,7 @@ func (db *DB) rewriteSnapshotBackground() error {
 	go func() {
 		defer close(ch)
 
-		cloned.logger.Info("start rewriting snapshot", "version", cloned.Version(), "compress", db.snapshotCompression )
+		cloned.logger.Info("start rewriting snapshot", "version", cloned.Version(), "compress", db.snapshotCompression)
 		if err := cloned.RewriteSnapshot(ctx); err != nil {
 			ch <- snapshotResult{err: err}
 			return
@@ -802,7 +802,7 @@ func initEmptyDB(dir string, initialVersion uint32) error {
 	tmp := NewEmptyMultiTree(initialVersion, 0)
 	snapshotDir := snapshotName(0)
 	// create tmp worker pool
-	pool := pond.New(config.DefaultSnapshotWriterLimit, config.DefaultSnapshotWriterLimit*10)
+	pool := pond.New(runtime.NumCPU(), runtime.NumCPU()*2)
 	defer pool.Stop()
 
 	if err := tmp.WriteSnapshot(context.Background(), filepath.Join(dir, snapshotDir), pool, false); err != nil {
