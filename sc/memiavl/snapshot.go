@@ -2,10 +2,13 @@ package memiavl
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -21,7 +24,10 @@ const (
 	SnapshotFormat = 0
 
 	// magic: uint32, format: uint32, version: uint32
-	SizeMetadata = 12
+	SizeMetadata = 13 // 12 + 1 for compression flag
+
+	SnapshotCompressionNone = 0
+	SnapshotCompressionGzip = 1
 
 	FileNameNodes    = "nodes"
 	FileNameLeaves   = "leaves"
@@ -41,7 +47,8 @@ type Snapshot struct {
 	kvs    []byte
 
 	// parsed from metadata file
-	version uint32
+	version     uint32
+	compression uint8 // 0 = none, 1 = gzip
 
 	// wrapping the raw nodes buffer
 	nodesLayout  Nodes
@@ -78,6 +85,7 @@ func OpenSnapshot(snapshotDir string) (*Snapshot, error) {
 		return nil, fmt.Errorf("unknown snapshot format: %d", format)
 	}
 	version := binary.LittleEndian.Uint32(bz[8:])
+	compression := bz[12]
 
 	var nodesMap, leavesMap, kvsMap *MmapFile
 	cleanupHandles := func(err error) error {
@@ -148,7 +156,8 @@ func OpenSnapshot(snapshotDir string) (*Snapshot, error) {
 		leaves: leaves,
 		kvs:    kvs,
 
-		version: version,
+		version:     version,
+		compression: compression,
 
 		nodesLayout:  nodesData,
 		leavesLayout: leavesData,
@@ -167,7 +176,6 @@ func OpenSnapshot(snapshotDir string) (*Snapshot, error) {
 			index:    0,
 		}
 	}
-
 	return snapshot, nil
 }
 
@@ -260,38 +268,76 @@ func (snapshot *Snapshot) ScanNodes(callback func(node PersistedNode) error) err
 
 // Key returns a zero-copy slice of key by offset
 func (snapshot *Snapshot) Key(offset uint64) []byte {
-	keyLen := binary.LittleEndian.Uint32(snapshot.kvs[offset:])
+	if snapshot.compression == SnapshotCompressionNone {
+		keyLen := binary.LittleEndian.Uint32(snapshot.kvs[offset:])
+		offset += 4
+		return snapshot.kvs[offset : offset+uint64(keyLen)]
+	}
+	// gzip compressed
+	origKeyLen := binary.LittleEndian.Uint32(snapshot.kvs[offset:])
 	offset += 4
-	return snapshot.kvs[offset : offset+uint64(keyLen)]
+	compKeyLen := binary.LittleEndian.Uint32(snapshot.kvs[offset:])
+	offset += 4
+	compKey := snapshot.kvs[offset : offset+uint64(compKeyLen)]
+	key, err := gzipDecompress(compKey, int(origKeyLen))
+	if err != nil {
+		panic(err)
+	}
+	return key
 }
 
 // KeyValue returns a zero-copy slice of key/value pair by offset
 func (snapshot *Snapshot) KeyValue(offset uint64) ([]byte, []byte) {
-	len := uint64(binary.LittleEndian.Uint32(snapshot.kvs[offset:]))
+	if snapshot.compression == SnapshotCompressionNone {
+		keyLen := binary.LittleEndian.Uint32(snapshot.kvs[offset:])
+		offset += 4
+		key := snapshot.kvs[offset : offset+uint64(keyLen)]
+		offset += uint64(keyLen)
+		valLen := binary.LittleEndian.Uint32(snapshot.kvs[offset:])
+		offset += 4
+		value := snapshot.kvs[offset : offset+uint64(valLen)]
+		return key, value
+	}
+	// gzip compressed
+	origKeyLen := binary.LittleEndian.Uint32(snapshot.kvs[offset:])
 	offset += 4
-	key := snapshot.kvs[offset : offset+len]
-	offset += len
-	len = uint64(binary.LittleEndian.Uint32(snapshot.kvs[offset:]))
+	compKeyLen := binary.LittleEndian.Uint32(snapshot.kvs[offset:])
 	offset += 4
-	value := snapshot.kvs[offset : offset+len]
+	compKey := snapshot.kvs[offset : offset+uint64(compKeyLen)]
+	offset += uint64(compKeyLen)
+	key, err := gzipDecompress(compKey, int(origKeyLen))
+	if err != nil {
+		panic(err)
+	}
+	origValLen := binary.LittleEndian.Uint32(snapshot.kvs[offset:])
+	offset += 4
+	compValLen := binary.LittleEndian.Uint32(snapshot.kvs[offset:])
+	offset += 4
+	compVal := snapshot.kvs[offset : offset+uint64(compValLen)]
+	value, err := gzipDecompress(compVal, int(origValLen))
+	if err != nil {
+		panic(err)
+	}
 	return key, value
+}
+
+func min(a, b uint64) uint64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (snapshot *Snapshot) LeafKey(index uint32) []byte {
 	leaf := snapshot.leavesLayout.Leaf(index)
-	offset := leaf.KeyOffset() + 4
-	return snapshot.kvs[offset : offset+uint64(leaf.KeyLength())]
+	offset := leaf.KeyOffset() + 0 // no +4, as Key() now handles offset
+	return snapshot.Key(offset)
 }
 
 func (snapshot *Snapshot) LeafKeyValue(index uint32) ([]byte, []byte) {
 	leaf := snapshot.leavesLayout.Leaf(index)
-	offset := leaf.KeyOffset() + 4
-	length := uint64(leaf.KeyLength())
-	key := snapshot.kvs[offset : offset+length]
-	offset += length
-	length = uint64(binary.LittleEndian.Uint32(snapshot.kvs[offset:]))
-	offset += 4
-	return key, snapshot.kvs[offset : offset+length]
+	offset := leaf.KeyOffset() + 0 // no +4, as KeyValue() now handles offset
+	return snapshot.KeyValue(offset)
 }
 
 // Export exports the nodes from snapshot file sequentially, more efficient than a post-order traversal.
@@ -351,22 +397,24 @@ func (snapshot *Snapshot) export(callback func(*types.SnapshotNode) bool) {
 }
 
 // WriteSnapshot save the IAVL tree to a new snapshot directory.
-func (t *Tree) WriteSnapshot(ctx context.Context, snapshotDir string) error {
-	return writeSnapshot(ctx, snapshotDir, t.version, func(w *snapshotWriter) (uint32, error) {
+func (t *Tree) WriteSnapshot(ctx context.Context, snapshotDir string, snapshotCompression bool) error {
+	err := writeSnapshot(ctx, snapshotDir, t.version, snapshotCompression, func(w *snapshotWriter) (uint32, error) {
 		if t.root == nil {
 			return 0, nil
 		}
-
 		if err := w.writeRecursive(t.root); err != nil {
 			return 0, err
 		}
 		return w.leafCounter, nil
 	})
+
+	return err
 }
 
 func writeSnapshot(
 	ctx context.Context,
 	dir string, version uint32,
+	snapshotCompression bool,
 	doWrite func(*snapshotWriter) (uint32, error),
 ) (returnErr error) {
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
@@ -411,7 +459,12 @@ func writeSnapshot(
 	leavesWriter := bufio.NewWriterSize(fpLeaves, bufIOSize)
 	kvsWriter := bufio.NewWriterSize(fpKVs, bufIOSize)
 
-	w := newSnapshotWriter(ctx, nodesWriter, leavesWriter, kvsWriter)
+	compressionType := SnapshotCompressionNone
+	if snapshotCompression {
+		compressionType = SnapshotCompressionGzip
+	}
+
+	w := newSnapshotWriter(ctx, nodesWriter, leavesWriter, kvsWriter, uint8(compressionType))
 	leaves, err := doWrite(w)
 	if err != nil {
 		return err
@@ -444,6 +497,7 @@ func writeSnapshot(
 	binary.LittleEndian.PutUint32(metadataBuf[:], SnapshotFileMagic)
 	binary.LittleEndian.PutUint32(metadataBuf[4:], SnapshotFormat)
 	binary.LittleEndian.PutUint32(metadataBuf[8:], version)
+	metadataBuf[12] = uint8(compressionType)
 
 	metadataFile := filepath.Join(dir, FileNameMetadata)
 	fpMetadata, err := createFile(metadataFile)
@@ -473,39 +527,107 @@ type snapshotWriter struct {
 	branchCounter, leafCounter uint32
 
 	// record the current writing offset in kvs file
-	kvsOffset uint64
+	kvsOffset   uint64
+	compression uint8
 }
 
-func newSnapshotWriter(ctx context.Context, nodesWriter, leavesWriter, kvsWriter io.Writer) *snapshotWriter {
+func newSnapshotWriter(ctx context.Context, nodesWriter, leavesWriter, kvsWriter io.Writer, compression uint8) *snapshotWriter {
 	return &snapshotWriter{
 		ctx:          ctx,
 		nodesWriter:  nodesWriter,
 		leavesWriter: leavesWriter,
 		kvWriter:     kvsWriter,
+		compression:  compression,
 	}
 }
 
-// writeKeyValue append key-value pair to kvs file and record the offset
+func gzipCompressFast(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	w, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if err != nil {
+		return nil, err
+	}
+	_, err = w.Write(data)
+	if err != nil {
+		w.Close()
+		return nil, err
+	}
+	w.Close()
+	return buf.Bytes(), nil
+}
+
+func gzipDecompress(data []byte, origLen int) ([]byte, error) {
+	r, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	out, err := ioutil.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) != origLen {
+		return nil, fmt.Errorf("decompressed length mismatch: got %d, want %d", len(out), origLen)
+	}
+	return out, nil
+}
+
 func (w *snapshotWriter) writeKeyValue(key, value []byte) error {
 	var numBuf [4]byte
-
-	binary.LittleEndian.PutUint32(numBuf[:], uint32(len(key)))
-	if _, err := w.kvWriter.Write(numBuf[:]); err != nil {
-		return err
+	if w.compression == SnapshotCompressionGzip {
+		// compress key
+		compKey, err := gzipCompressFast(key)
+		if err != nil {
+			return err
+		}
+		// compress value
+		compValue, err := gzipCompressFast(value)
+		if err != nil {
+			return err
+		}
+		// write original and compressed key lengths
+		binary.LittleEndian.PutUint32(numBuf[:], uint32(len(key)))
+		if _, err := w.kvWriter.Write(numBuf[:]); err != nil {
+			return err
+		}
+		binary.LittleEndian.PutUint32(numBuf[:], uint32(len(compKey)))
+		if _, err := w.kvWriter.Write(numBuf[:]); err != nil {
+			return err
+		}
+		if _, err := w.kvWriter.Write(compKey); err != nil {
+			return err
+		}
+		// write original and compressed value lengths
+		binary.LittleEndian.PutUint32(numBuf[:], uint32(len(value)))
+		if _, err := w.kvWriter.Write(numBuf[:]); err != nil {
+			return err
+		}
+		binary.LittleEndian.PutUint32(numBuf[:], uint32(len(compValue)))
+		if _, err := w.kvWriter.Write(numBuf[:]); err != nil {
+			return err
+		}
+		if _, err := w.kvWriter.Write(compValue); err != nil {
+			return err
+		}
+		w.kvsOffset += 4 + 4 + uint64(len(compKey)) + 4 + 4 + uint64(len(compValue))
+	} else {
+		// uncompressed format
+		binary.LittleEndian.PutUint32(numBuf[:], uint32(len(key)))
+		if _, err := w.kvWriter.Write(numBuf[:]); err != nil {
+			return err
+		}
+		if _, err := w.kvWriter.Write(key); err != nil {
+			return err
+		}
+		binary.LittleEndian.PutUint32(numBuf[:], uint32(len(value)))
+		if _, err := w.kvWriter.Write(numBuf[:]); err != nil {
+			return err
+		}
+		if _, err := w.kvWriter.Write(value); err != nil {
+			return err
+		}
+		w.kvsOffset += 4 + uint64(len(key)) + 4 + uint64(len(value))
 	}
-	if _, err := w.kvWriter.Write(key); err != nil {
-		return err
-	}
-
-	binary.LittleEndian.PutUint32(numBuf[:], uint32(len(value)))
-	if _, err := w.kvWriter.Write(numBuf[:]); err != nil {
-		return err
-	}
-	if _, err := w.kvWriter.Write(value); err != nil {
-		return err
-	}
-
-	w.kvsOffset += 4 + 4 + uint64(len(key)) + uint64(len(value))
 	return nil
 }
 

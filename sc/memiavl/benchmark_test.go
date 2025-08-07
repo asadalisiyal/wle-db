@@ -33,7 +33,7 @@ func BenchmarkRandomGet(b *testing.B) {
 	}
 
 	snapshotDir := b.TempDir()
-	err := tree.WriteSnapshot(context.Background(), snapshotDir)
+	err := tree.WriteSnapshot(context.Background(), snapshotDir, false)
 	require.NoError(b, err)
 	snapshot, err := OpenSnapshot(snapshotDir)
 	require.NoError(b, err)

@@ -35,6 +35,9 @@ type Options struct {
 
 	// Limit the number of concurrent snapshot writers
 	SnapshotWriterLimit int
+
+	// Enable gzip compression for snapshot files
+	SnapshotCompression bool
 }
 
 func (opts Options) Validate() error {

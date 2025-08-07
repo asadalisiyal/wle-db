@@ -41,8 +41,11 @@ type StateCommitConfig struct {
 	// SnapshotInterval defines the block interval the memiavl snapshot is taken, default to 10000.
 	SnapshotInterval uint32 `mapstructure:"snapshot-interval"`
 
-	// SnapshotWriterLimit defines the concurrency for taking commit store snapshot
+	// SnapshotWriterLimit defines the concurrency for taking commit store snapshot.
 	SnapshotWriterLimit int `mapstructure:"snapshot-writer-limit"`
+
+	// SnapshotCompression defines if the memiavl snapshot should be compressed.
+	SnapshotCompression bool `mapstructure:"snapshot-compression"`
 
 	// CacheSize defines the size of the cache for each memiavl store.
 	// Deprecated: this is removed, we will just rely on mmap page cache
@@ -100,11 +103,12 @@ type StateStoreConfig struct {
 
 func DefaultStateCommitConfig() StateCommitConfig {
 	return StateCommitConfig{
-		Enable:             true,
-		AsyncCommitBuffer:  DefaultAsyncCommitBuffer,
-		CacheSize:          DefaultCacheSize,
-		SnapshotInterval:   DefaultSnapshotInterval,
-		SnapshotKeepRecent: DefaultSnapshotKeepRecent,
+		Enable:              true,
+		AsyncCommitBuffer:   DefaultAsyncCommitBuffer,
+		CacheSize:           DefaultCacheSize,
+		SnapshotInterval:    DefaultSnapshotInterval,
+		SnapshotKeepRecent:  DefaultSnapshotKeepRecent,
+		SnapshotCompression: true,
 	}
 }
 

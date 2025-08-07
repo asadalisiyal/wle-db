@@ -33,6 +33,7 @@ func NewCommitStore(homeDir string, logger logger.Logger, config config.StateCom
 		SnapshotWriterLimit:              config.SnapshotWriterLimit,
 		CacheSize:                        config.CacheSize,
 		CreateIfMissing:                  true,
+		SnapshotCompression:              config.SnapshotCompression,
 		OnlyAllowExportOnSnapshotVersion: config.OnlyAllowExportOnSnapshotVersion,
 	}
 	commitStore := &CommitStore{

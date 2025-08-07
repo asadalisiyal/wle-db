@@ -375,7 +375,7 @@ func (t *MultiTree) Catchup(stream types.Stream[proto.ChangelogEntry], endVersio
 	return nil
 }
 
-func (t *MultiTree) WriteSnapshot(ctx context.Context, dir string, wp *pond.WorkerPool) error {
+func (t *MultiTree) WriteSnapshot(ctx context.Context, dir string, wp *pond.WorkerPool, snapshotCompression bool) error {
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 		return err
 	}
@@ -386,7 +386,7 @@ func (t *MultiTree) WriteSnapshot(ctx context.Context, dir string, wp *pond.Work
 	for _, entry := range t.trees {
 		tree, name := entry.Tree, entry.Name
 		group.Submit(func() error {
-			return tree.WriteSnapshot(ctx, filepath.Join(dir, name))
+			return tree.WriteSnapshot(ctx, filepath.Join(dir, name), snapshotCompression)
 		})
 	}
 

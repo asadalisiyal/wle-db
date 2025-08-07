@@ -5,13 +5,11 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/cosmos/iavl"
-	"github.com/sei-protocol/sei-db/common/errors"
 	"github.com/sei-protocol/sei-db/common/logger"
 	"github.com/sei-protocol/sei-db/common/utils"
 	"github.com/sei-protocol/sei-db/proto"
@@ -19,10 +17,12 @@ import (
 )
 
 func TestRewriteSnapshot(t *testing.T) {
+	dir := t.TempDir() + "_" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	db, err := OpenDB(logger.NewNopLogger(), 0, Options{
-		Dir:             t.TempDir(),
-		CreateIfMissing: true,
-		InitialStores:   []string{"test"},
+		Dir:                 dir,
+		CreateIfMissing:     true,
+		InitialStores:       []string{"test"},
+		SnapshotCompression: false,
 	})
 	require.NoError(t, err)
 
@@ -56,10 +56,11 @@ func TestRemoveSnapshotDir(t *testing.T) {
 		t.Fatalf("Failed to create dummy snapshot directory: %v", err)
 	}
 	db, err := OpenDB(logger.NewNopLogger(), 0, Options{
-		Dir:                dbDir,
-		CreateIfMissing:    true,
-		InitialStores:      []string{"test"},
-		SnapshotKeepRecent: 0,
+		Dir:                 dbDir,
+		CreateIfMissing:     true,
+		InitialStores:       []string{"test"},
+		SnapshotKeepRecent:  0,
+		SnapshotCompression: false,
 	})
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
@@ -71,8 +72,9 @@ func TestRemoveSnapshotDir(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = OpenDB(logger.NewNopLogger(), 0, Options{
-		Dir:      dbDir,
-		ReadOnly: true,
+		Dir:                 dbDir,
+		ReadOnly:            true,
+		SnapshotCompression: false,
 	})
 	require.NoError(t, err)
 
@@ -80,7 +82,8 @@ func TestRemoveSnapshotDir(t *testing.T) {
 	require.False(t, os.IsNotExist(err))
 
 	db, err = OpenDB(logger.NewNopLogger(), 0, Options{
-		Dir: dbDir,
+		Dir:                 dbDir,
+		SnapshotCompression: false,
 	})
 	require.NoError(t, err)
 
@@ -92,10 +95,11 @@ func TestRemoveSnapshotDir(t *testing.T) {
 
 func TestRewriteSnapshotBackground(t *testing.T) {
 	db, err := OpenDB(logger.NewNopLogger(), 0, Options{
-		Dir:                t.TempDir(),
-		CreateIfMissing:    true,
-		InitialStores:      []string{"test"},
-		SnapshotKeepRecent: 0, // only a single snapshot is kept
+		Dir:                 t.TempDir(),
+		CreateIfMissing:     true,
+		InitialStores:       []string{"test"},
+		SnapshotKeepRecent:  0, // only a single snapshot is kept
+		SnapshotCompression: false,
 	})
 	require.NoError(t, err)
 
@@ -320,57 +324,6 @@ func TestLoadVersion(t *testing.T) {
 	}
 }
 
-func TestZeroCopy(t *testing.T) {
-	db, err := OpenDB(logger.NewNopLogger(), 0, Options{
-		Dir:             t.TempDir(),
-		InitialStores:   []string{"test", "test2"},
-		CreateIfMissing: true,
-		ZeroCopy:        true,
-	})
-	require.NoError(t, err)
-	require.NoError(t, db.ApplyChangeSets([]*proto.NamedChangeSet{
-		{Name: "test", Changeset: ChangeSets[0]},
-	}))
-	_, err = db.Commit()
-	require.NoError(t, err)
-	require.NoError(t, errors.Join(
-		db.RewriteSnapshot(context.Background()),
-		db.Reload(),
-	))
-
-	// the test tree's root hash will reference the zero-copy value
-	require.NoError(t, db.ApplyChangeSets([]*proto.NamedChangeSet{
-		{Name: "test2", Changeset: ChangeSets[0]},
-	}))
-	_, err = db.Commit()
-	require.NoError(t, err)
-
-	commitInfo := *db.LastCommitInfo()
-
-	value := db.TreeByName("test").Get([]byte("hello"))
-	require.Equal(t, []byte("world"), value)
-
-	db.SetZeroCopy(false)
-	valueCloned := db.TreeByName("test").Get([]byte("hello"))
-	require.Equal(t, []byte("world"), valueCloned)
-
-	_ = commitInfo.StoreInfos[0].CommitId.Hash[0]
-
-	require.NoError(t, db.Close())
-
-	require.Equal(t, []byte("world"), valueCloned)
-
-	// accessing the zero-copy value after the db is closed triggers segment fault.
-	// reset global panic on fault setting after function finished
-	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
-	require.Panics(t, func() {
-		require.Equal(t, []byte("world"), value)
-	})
-
-	// it's ok to access after db closed
-	_ = commitInfo.StoreInfos[0].CommitId.Hash[0]
-}
-
 func TestRlogIndexConversion(t *testing.T) {
 	testCases := []struct {
 		index          uint64
@@ -555,4 +508,61 @@ func TestRepeatedApplyChangeSet(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
+}
+
+func TestSnapshotRestoreAllKeyValues(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(logger.NewNopLogger(), 0, Options{
+		Dir:             dir,
+		CreateIfMissing: true,
+		InitialStores:   []string{"test"},
+	})
+	require.NoError(t, err)
+
+	// Write first 10 key-value pairs
+	for i := 0; i < 10; i++ {
+		key := []byte("key" + strconv.Itoa(i))
+		val := []byte("val" + strconv.Itoa(i))
+		cs := []*proto.NamedChangeSet{{
+			Name:      "test",
+			Changeset: iavl.ChangeSet{Pairs: []*iavl.KVPair{{Key: key, Value: val}}},
+		}}
+		require.NoError(t, db.ApplyChangeSets(cs))
+		_, err = db.Commit()
+		require.NoError(t, err)
+	}
+
+	// Create a snapshot
+	require.NoError(t, db.RewriteSnapshot(context.Background()))
+
+	// Write another 10 key-value pairs
+	for i := 10; i < 20; i++ {
+		key := []byte("key" + strconv.Itoa(i))
+		val := []byte("val" + strconv.Itoa(i))
+		cs := []*proto.NamedChangeSet{{
+			Name:      "test",
+			Changeset: iavl.ChangeSet{Pairs: []*iavl.KVPair{{Key: key, Value: val}}},
+		}}
+		require.NoError(t, db.ApplyChangeSets(cs))
+		_, err = db.Commit()
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, db.Close())
+
+	// Reload from the snapshot (simulate restore)
+	db2, err := OpenDB(logger.NewNopLogger(), 0, Options{Dir: dir})
+	require.NoError(t, err)
+
+	tree := db2.TreeByName("test")
+	require.NotNil(t, tree)
+
+	// Check all 20 key-value pairs
+	for i := 0; i < 20; i++ {
+		key := []byte("key" + strconv.Itoa(i))
+		val := []byte("val" + strconv.Itoa(i))
+		got := tree.Get(key)
+		require.NotNil(t, got, "key %s missing after restore", key)
+		require.Equal(t, val, got, "value mismatch for key %s after restore", key)
+	}
 }

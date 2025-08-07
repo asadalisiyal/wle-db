@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"bytes"
+
 	errorutils "github.com/sei-protocol/sei-db/common/errors"
 	"github.com/sei-protocol/sei-db/common/logger"
 	"github.com/sei-protocol/sei-db/proto"
@@ -13,8 +15,16 @@ import (
 )
 
 func TestSnapshotEncodingRoundTrip(t *testing.T) {
-	// setup test tree
-	tree := New(0)
+	// setup test tree with compression enabled
+	dbDir := t.TempDir()
+	db, err := OpenDB(logger.NewNopLogger(), 0, Options{
+		Dir:                 dbDir,
+		CreateIfMissing:     true,
+		InitialStores:       []string{"test"},
+		SnapshotCompression: true,
+	})
+	require.NoError(t, err)
+	tree := db.TreeByName("test")
 	for _, changes := range ChangeSets[:len(ChangeSets)-1] {
 		tree.ApplyChangeSet(changes)
 		_, _, err := tree.SaveVersion(true)
@@ -22,10 +32,11 @@ func TestSnapshotEncodingRoundTrip(t *testing.T) {
 	}
 
 	snapshotDir := t.TempDir()
-	require.NoError(t, tree.WriteSnapshot(context.Background(), snapshotDir))
+	require.NoError(t, tree.WriteSnapshot(context.Background(), snapshotDir, true))
 
 	snapshot, err := OpenSnapshot(snapshotDir)
 	require.NoError(t, err)
+	require.Equal(t, uint8(1), snapshot.compression) // verify compression is enabled
 
 	tree2 := NewFromSnapshot(snapshot, true, 0)
 
@@ -72,7 +83,7 @@ func TestSnapshotExport(t *testing.T) {
 	}
 
 	snapshotDir := t.TempDir()
-	require.NoError(t, tree.WriteSnapshot(context.Background(), snapshotDir))
+	require.NoError(t, tree.WriteSnapshot(context.Background(), snapshotDir, false))
 
 	snapshot, err := OpenSnapshot(snapshotDir)
 	require.NoError(t, err)
@@ -101,7 +112,7 @@ func TestSnapshotImportExport(t *testing.T) {
 	}
 
 	snapshotDir := t.TempDir()
-	require.NoError(t, tree.WriteSnapshot(context.Background(), snapshotDir))
+	require.NoError(t, tree.WriteSnapshot(context.Background(), snapshotDir, false))
 	snapshot, err := OpenSnapshot(snapshotDir)
 	require.NoError(t, err)
 
@@ -195,4 +206,44 @@ func testSnapshotRoundTrip(t *testing.T, db *DB) {
 	// the imported db function normally
 	_, err = db2.Commit()
 	require.NoError(t, err)
+}
+
+func TestSnapshotGzipCompression(t *testing.T) {
+	tree := New(0)
+	// Add some compressible and incompressible data
+	compressible := bytes.Repeat([]byte("A"), 1024)
+	incompressible := make([]byte, 1024)
+	for i := range incompressible {
+		incompressible[i] = byte(i % 256)
+	}
+	testData := []struct {
+		key, value []byte
+	}{
+		{[]byte("foo"), []byte("bar")},
+		{[]byte("hello"), []byte("world")},
+		{[]byte("compressible"), compressible},
+		{[]byte("incompressible"), incompressible},
+	}
+	for _, kv := range testData {
+		tree.Set(kv.key, kv.value)
+	}
+	_, _, err := tree.SaveVersion(true)
+	require.NoError(t, err)
+
+	snapshotDir := t.TempDir()
+	require.NoError(t, tree.WriteSnapshot(context.Background(), snapshotDir, true))
+
+	snapshot, err := OpenSnapshot(snapshotDir)
+	require.NoError(t, err)
+	defer snapshot.Close()
+
+	// Check that compression flag is set to gzip
+	require.Equal(t, uint8(1), snapshot.compression)
+
+	// Check that all key/value pairs are restored correctly
+	for _, kv := range testData {
+		val, _ := snapshot.RootNode().Get(kv.key)
+		require.NotNil(t, val, "key %s not found", kv.key)
+		require.Equal(t, kv.value, val, "value mismatch for key %s", kv.key)
+	}
 }

@@ -255,7 +255,7 @@ func TestGetByIndex(t *testing.T) {
 
 	// test persisted tree
 	dir := t.TempDir()
-	require.NoError(t, tree.WriteSnapshot(context.Background(), dir))
+	require.NoError(t, tree.WriteSnapshot(context.Background(), dir, false))
 	snapshot, err := OpenSnapshot(dir)
 	require.NoError(t, err)
 	ptree := NewFromSnapshot(snapshot, true, 0)

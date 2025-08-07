@@ -76,7 +76,8 @@ type DB struct {
 	//   (the background snapshot rewrite is handled separately), so we don't need locks in the Tree.
 	mtx sync.Mutex
 	// worker goroutine IdleTimeout = 5s
-	snapshotWriterPool *pond.WorkerPool
+	snapshotWriterPool  *pond.WorkerPool
+	snapshotCompression bool // <--- add this field
 }
 
 const (
@@ -188,15 +189,16 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 	workerPool := pond.New(opts.SnapshotWriterLimit, opts.SnapshotWriterLimit*10)
 
 	db := &DB{
-		MultiTree:          *mtree,
-		logger:             logger,
-		dir:                opts.Dir,
-		fileLock:           fileLock,
-		readOnly:           opts.ReadOnly,
-		streamHandler:      streamHandler,
-		snapshotKeepRecent: opts.SnapshotKeepRecent,
-		snapshotInterval:   opts.SnapshotInterval,
-		snapshotWriterPool: workerPool,
+		MultiTree:           *mtree,
+		logger:              logger,
+		dir:                 opts.Dir,
+		fileLock:            fileLock,
+		readOnly:            opts.ReadOnly,
+		streamHandler:       streamHandler,
+		snapshotKeepRecent:  opts.SnapshotKeepRecent,
+		snapshotInterval:    opts.SnapshotInterval,
+		snapshotWriterPool:  workerPool,
+		snapshotCompression: opts.SnapshotCompression, // <--- propagate here
 	}
 
 	if !db.readOnly && db.Version() == 0 && len(opts.InitialStores) > 0 {
@@ -208,9 +210,6 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 		if err := db.ApplyUpgrades(upgrades); err != nil {
 			return nil, errorutils.Join(err, db.Close())
 		}
-	}
-	if db.streamHandler == nil {
-		fmt.Println("[Debug] DB steam handler is nil??")
 	}
 	return db, nil
 }
@@ -512,7 +511,7 @@ func (db *DB) RewriteSnapshot(ctx context.Context) error {
 	snapshotDir := snapshotName(db.lastCommitInfo.Version)
 	tmpDir := snapshotDir + "-tmp"
 	path := filepath.Join(db.dir, tmpDir)
-	if err := db.MultiTree.WriteSnapshot(ctx, path, db.snapshotWriterPool); err != nil {
+	if err := db.MultiTree.WriteSnapshot(ctx, path, db.snapshotWriterPool, db.snapshotCompression); err != nil {
 		return errorutils.Join(err, os.RemoveAll(path))
 	}
 	if err := os.Rename(path, filepath.Join(db.dir, snapshotDir)); err != nil {
@@ -704,7 +703,7 @@ func (db *DB) WriteSnapshot(dir string) error {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
-	return db.MultiTree.WriteSnapshot(context.Background(), dir, db.snapshotWriterPool)
+	return db.MultiTree.WriteSnapshot(context.Background(), dir, db.snapshotWriterPool, db.snapshotCompression)
 }
 
 func snapshotName(version int64) string {
@@ -804,7 +803,7 @@ func initEmptyDB(dir string, initialVersion uint32) error {
 	pool := pond.New(config.DefaultSnapshotWriterLimit, config.DefaultSnapshotWriterLimit*10)
 	defer pool.Stop()
 
-	if err := tmp.WriteSnapshot(context.Background(), filepath.Join(dir, snapshotDir), pool); err != nil {
+	if err := tmp.WriteSnapshot(context.Background(), filepath.Join(dir, snapshotDir), pool, false); err != nil {
 		return err
 	}
 	return updateCurrentSymlink(dir, snapshotDir)
