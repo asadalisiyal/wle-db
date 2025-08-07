@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"bytes"
+	"os"
+	"path/filepath"
 
 	errorutils "github.com/sei-protocol/sei-db/common/errors"
 	"github.com/sei-protocol/sei-db/common/logger"
@@ -246,4 +248,29 @@ func TestSnapshotGzipCompression(t *testing.T) {
 		require.NotNil(t, val, "key %s not found", kv.key)
 		require.Equal(t, kv.value, val, "value mismatch for key %s", kv.key)
 	}
+}
+
+func TestOpenOldSnapshotWithoutCompressionFlag(t *testing.T) {
+	tree := New(0)
+	tree.Set([]byte("foo"), []byte("bar"))
+	_, _, err := tree.SaveVersion(true)
+	require.NoError(t, err)
+
+	snapshotDir := t.TempDir()
+	require.NoError(t, tree.WriteSnapshot(context.Background(), snapshotDir, false))
+
+	// Overwrite metadata file to simulate old snapshot (12 bytes, no compression flag)
+	metadataFile := filepath.Join(snapshotDir, "metadata")
+	metadata, err := os.ReadFile(metadataFile)
+	require.NoError(t, err)
+	require.Equal(t, 13, len(metadata))
+	metadata = metadata[:12] // truncate to 12 bytes
+	require.NoError(t, os.WriteFile(metadataFile, metadata, 0o600))
+
+	snapshot, err := OpenSnapshot(snapshotDir)
+	require.NoError(t, err)
+	require.Equal(t, uint8(0), snapshot.compression) // should be uncompressed
+	_, val := snapshot.RootNode().Get([]byte("foo"))
+	require.Equal(t, []byte("bar"), val)
+	require.NoError(t, snapshot.Close())
 }

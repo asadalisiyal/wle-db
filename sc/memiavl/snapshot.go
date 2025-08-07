@@ -72,8 +72,14 @@ func OpenSnapshot(snapshotDir string) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(bz) != SizeMetadata {
-		return nil, fmt.Errorf("wrong metadata file size, expcted: %d, found: %d", SizeMetadata, len(bz))
+	var compression uint8
+	if len(bz) == SizeMetadata {
+		compression = bz[12]
+	} else if len(bz) == 12 {
+		// Old snapshot: no compression flag, treat as uncompressed
+		compression = SnapshotCompressionNone
+	} else {
+		return nil, fmt.Errorf("wrong metadata file size, expected: %d or 12, found: %d", SizeMetadata, len(bz))
 	}
 
 	magic := binary.LittleEndian.Uint32(bz)
@@ -85,7 +91,6 @@ func OpenSnapshot(snapshotDir string) (*Snapshot, error) {
 		return nil, fmt.Errorf("unknown snapshot format: %d", format)
 	}
 	version := binary.LittleEndian.Uint32(bz[8:])
-	compression := bz[12]
 
 	var nodesMap, leavesMap, kvsMap *MmapFile
 	cleanupHandles := func(err error) error {
@@ -484,12 +489,18 @@ func writeSnapshot(
 		if err := fpKVs.Sync(); err != nil {
 			return err
 		}
+		fadviseDontNeed(fpKVs.Fd())
+
 		if err := fpLeaves.Sync(); err != nil {
 			return err
 		}
+		fadviseDontNeed(fpLeaves.Fd())
+
 		if err := fpNodes.Sync(); err != nil {
 			return err
 		}
+		fadviseDontNeed(fpNodes.Fd())
+
 	}
 
 	// write metadata
