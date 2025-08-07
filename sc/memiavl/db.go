@@ -496,6 +496,7 @@ func (db *DB) copy(cacheSize int) *DB {
 		logger:             db.logger,
 		dir:                db.dir,
 		snapshotWriterPool: db.snapshotWriterPool,
+		snapshotCompression: db.snapshotCompression,
 	}
 }
 
@@ -511,6 +512,7 @@ func (db *DB) RewriteSnapshot(ctx context.Context) error {
 	snapshotDir := snapshotName(db.lastCommitInfo.Version)
 	tmpDir := snapshotDir + "-tmp"
 	path := filepath.Join(db.dir, tmpDir)
+	db.logger.Info("Creating new snapshot", "dir", path, "version", db.lastCommitInfo.Version)
 	if err := db.MultiTree.WriteSnapshot(ctx, path, db.snapshotWriterPool, db.snapshotCompression); err != nil {
 		return errorutils.Join(err, os.RemoveAll(path))
 	}
@@ -586,7 +588,7 @@ func (db *DB) rewriteSnapshotBackground() error {
 	go func() {
 		defer close(ch)
 
-		cloned.logger.Info("start rewriting snapshot", "version", cloned.Version())
+		cloned.logger.Info("start rewriting snapshot", "version", cloned.Version(), "compress", db.snapshotCompression )
 		if err := cloned.RewriteSnapshot(ctx); err != nil {
 			ch <- snapshotResult{err: err}
 			return
