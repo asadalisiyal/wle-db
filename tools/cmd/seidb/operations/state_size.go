@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/sei-protocol/sei-db/common/logger"
 	"github.com/sei-protocol/sei-db/sc/memiavl"
@@ -83,6 +82,7 @@ func PrintStateSize(module string, db *memiavl.DB) error {
 			valueSizeByPrefix := map[string]int64{}
 			numKeysByPrefix := map[string]int64{}
 			contractSizes := make(map[string]*contractSizeEntry)
+			uniqueContracts := make(map[string]bool)
 			// Scan again to collect per-contract statistics
 			tree.ScanPostOrder(func(node memiavl.Node) bool {
 				if node.IsLeaf() {
@@ -101,6 +101,7 @@ func PrintStateSize(module string, db *memiavl.DB) error {
 					if module == "evm" && prefix == "03" {
 						// Extract contract address from key (assuming it follows after "03")
 						addr := prefixKey[2:42] // Adjust indices based on your key format
+						uniqueContracts[addr] = true
 						if _, exists := contractSizes[addr]; !exists {
 							contractSizes[addr] = &contractSizeEntry{Address: addr}
 						}
@@ -117,7 +118,7 @@ func PrintStateSize(module string, db *memiavl.DB) error {
 				}
 				return true
 			})
-			fmt.Printf("Module %s total numKeys:%d, total keySize:%d, total valueSize:%d, totalSize: %d \n", moduleName, totalNumKeys, totalKeySize, totalValueSize, totalSize)
+			fmt.Printf("Module %s total numKeys:%d, total keySize MB:%d, total valueSize MB:%d, totalSize MB: %d \n", moduleName, totalNumKeys, totalKeySize/1024/1024, totalValueSize/1024/1024, totalSize/1024/1024)
 			prefixKeyResult, _ := json.MarshalIndent(keySizeByPrefix, "", "  ")
 			fmt.Printf("Module %s prefix key size breakdown (bytes): %s \n", moduleName, prefixKeyResult)
 			prefixValueResult, _ := json.MarshalIndent(valueSizeByPrefix, "", "  ")
@@ -137,21 +138,19 @@ func PrintStateSize(module string, db *memiavl.DB) error {
 			})
 
 			fmt.Printf("\nDetailed breakdown for 0x03 prefix (top 100 contracts by total size):\n")
-			fmt.Printf("%-42s %15s %15s %15s %10s\n", "Contract Address", "Key Size", "Value Size", "Total Size", "Key Count")
-			fmt.Printf("%s\n", strings.Repeat("-", 100))
-
+			fmt.Printf("%s,%s,%s\n", "Contract Address", "Total Size", "Key Count")
 			if len(sortedContracts) < numToShow {
 				numToShow = len(sortedContracts)
 			}
 			for i := 0; i < numToShow; i++ {
 				contract := sortedContracts[i]
-				fmt.Printf("0x%-40s %15d %15d %15d %10d\n",
+				fmt.Printf("0x%-40s,%d,%d\n",
 					contract.Address,
-					contract.KeySize,
-					contract.ValueSize,
-					contract.TotalSize,
+					contract.TotalSize/1024/1024,
 					contract.KeyCount)
 			}
+
+			fmt.Printf("Total unique contracts: %d\n", len(uniqueContracts))
 		}
 	}
 	return nil
