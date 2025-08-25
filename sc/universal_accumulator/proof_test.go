@@ -92,7 +92,7 @@ func TestAccumulatorProofAPI_Basic(t *testing.T) {
 	storage.SetStorageValue(address, storageKey, storageValue)
 
 	// Add some data to accumulator for height 100
-	fullKey := append(address, storageKey...)
+	fullKey := append(append([]byte(nil), address...), storageKey...)
 	changeset := AccumulatorChangeset{
 		Version: 100,
 		Entries: []AccumulatorKVPair{
@@ -153,7 +153,7 @@ func TestAccumulatorProofAPI_GetProof(t *testing.T) {
 	storage.SetStorageValue(address, storageKey, storageValue)
 
 	// Add data to accumulator
-	fullKey := append(address, storageKey...)
+	fullKey := append(append([]byte(nil), address...), storageKey...)
 	changeset := AccumulatorChangeset{
 		Version: 200,
 		Entries: []AccumulatorKVPair{
@@ -259,7 +259,7 @@ func TestAccumulatorProofAPI_VerifyProof(t *testing.T) {
 	storage.SetStorageValue(address, storageKey, storageValue)
 
 	// Add data to accumulator
-	fullKey := append(address, storageKey...)
+	fullKey := append(append([]byte(nil), address...), storageKey...)
 	changeset := AccumulatorChangeset{
 		Version: 300,
 		Entries: []AccumulatorKVPair{

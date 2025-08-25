@@ -99,7 +99,7 @@ func TestAddEntriesStream_EdgeCases(t *testing.T) {
 		entryChan := make(chan AccumulatorKVPair)
 		close(entryChan)
 
-		ctx := t.Context()
+		ctx := context.Background()
 		err = acc.AddEntriesStream(ctx, entryChan, 10)
 		if err != nil {
 			t.Fatalf("Failed to handle empty channel: %v", err)
@@ -109,7 +109,7 @@ func TestAddEntriesStream_EdgeCases(t *testing.T) {
 	t.Run("ContextCancellation", func(t *testing.T) {
 		entryChan := make(chan AccumulatorKVPair)
 
-		ctx, cancel := context.WithCancel(t.Context())
+		ctx, cancel := context.WithCancel(context.Background())
 		defer close(entryChan)
 
 		// Cancel immediately
@@ -122,7 +122,7 @@ func TestAddEntriesStream_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("SlowProducer", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 
 		entryChan := make(chan AccumulatorKVPair)
@@ -230,7 +230,7 @@ func TestAPI_ErrorHandling(t *testing.T) {
 	})
 
 	t.Run("AddEntriesStream_Uninitialized", func(t *testing.T) {
-		ctx := t.Context()
+		ctx := context.Background()
 		entryChan := make(chan AccumulatorKVPair)
 		close(entryChan)
 

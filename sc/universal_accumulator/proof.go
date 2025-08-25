@@ -91,7 +91,7 @@ func (api *AccumulatorProofAPI) GetProof(
 		}
 
 		// Construct the full key: address + storage_key
-		fullKey := append(addr, key...)
+		fullKey := append(append([]byte(nil), addr...), key...)
 
 		// Generate witness
 		witness, err := api.acc.IssueWitness(fullKey, value, exists)

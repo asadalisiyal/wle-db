@@ -1,6 +1,7 @@
 package universalaccumulator
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -476,7 +477,7 @@ func TestStreamingAPI(t *testing.T) {
 	}()
 
 	// Process streaming data
-	ctx := t.Context()
+	ctx := context.Background()
 	bufferSize := 1000
 
 	start := time.Now()
