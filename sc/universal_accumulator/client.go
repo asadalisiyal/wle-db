@@ -8,7 +8,6 @@ import (
 )
 
 // UniversalAccumulator provides the main interface for the Universal Accumulator.
-// This follows the same patterns as other storage APIs in the repo.
 type UniversalAccumulator struct {
 	engine *AccumulatorEngine
 	mu     sync.RWMutex

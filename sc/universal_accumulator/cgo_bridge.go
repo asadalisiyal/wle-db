@@ -37,7 +37,7 @@ func addHashedElementsWrapper(accumulator unsafe.Pointer, flatHashes []byte, cou
 	// Use C.add_hashed_elements directly
 	ret := C.add_hashed_elements((*C.t_state)(accumulator), (*C.uchar)(unsafe.Pointer(&flatHashes[0])), C.int(count))
 	if ret != 0 {
-		return errors.New("C.add_hashed_elements failed, possibly due to memory allocation error")
+		return errors.New("add_hashed_elements failed, possibly due to memory allocation error")
 	}
 
 	return nil
@@ -51,7 +51,7 @@ func batchDelHashedElementsWrapper(accumulator unsafe.Pointer, flatHashes []byte
 	// Use the existing batch_del_hashed_elements C function
 	ret := C.batch_del_hashed_elements((*C.t_state)(accumulator), (*C.uchar)(unsafe.Pointer(&flatHashes[0])), C.int(count))
 	if ret != 0 {
-		return errors.New("C.batch_del_hashed_elements failed, possibly due to memory allocation error")
+		return errors.New("batch_del_hashed_elements failed, possibly due to memory allocation error")
 	}
 
 	return nil
