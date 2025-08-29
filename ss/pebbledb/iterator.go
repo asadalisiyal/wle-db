@@ -29,6 +29,7 @@ type iterator struct {
 }
 
 func newPebbleDBIterator(src *pebble.Iterator, prefix, mvccStart, mvccEnd []byte, version int64, earliestVersion int64, reverse bool) *iterator {
+	fmt.Printf("SSDEBUG - newPebbleDBIterator prefix length %d mvccStart length %d mvccEnd length %d version %d earliestVersion %d reverse %t\n", len(prefix), len(mvccStart), len(mvccEnd), version, earliestVersion, reverse)
 	// Return invalid iterator if requested iterator height is lower than earliest version after pruning
 	if version < earliestVersion {
 		return &iterator{
@@ -100,10 +101,12 @@ func newPebbleDBIterator(src *pebble.Iterator, prefix, mvccStart, mvccEnd []byte
 // Domain returns the domain of the iterator. The caller must not modify the
 // return values.
 func (itr *iterator) Domain() ([]byte, []byte) {
+	fmt.Printf("SSDEBUG - iterator.Domain\n")
 	return itr.start, itr.end
 }
 
 func (itr *iterator) Key() []byte {
+	fmt.Printf("SSDEBUG - iterator.Key\n")
 	itr.assertIsValid()
 
 	key, _, ok := SplitMVCCKey(itr.source.Key())
@@ -118,6 +121,7 @@ func (itr *iterator) Key() []byte {
 }
 
 func (itr *iterator) Value() []byte {
+	fmt.Printf("SSDEBUG - iterator.Value\n")
 	itr.assertIsValid()
 
 	val, _, ok := SplitMVCCKey(itr.source.Value())
@@ -131,6 +135,7 @@ func (itr *iterator) Value() []byte {
 }
 
 func (itr *iterator) nextForward() {
+	fmt.Printf("SSDEBUG - iterator.nextForward\n")
 	if !itr.source.Valid() {
 		itr.valid = false
 		return
@@ -220,6 +225,7 @@ func (itr *iterator) nextForward() {
 }
 
 func (itr *iterator) nextReverse() {
+	fmt.Printf("SSDEBUG - iterator.nextReverse\n")
 	if !itr.source.Valid() {
 		itr.valid = false
 		return
@@ -289,6 +295,7 @@ func (itr *iterator) nextReverse() {
 }
 
 func (itr *iterator) Next() {
+	fmt.Printf("SSDEBUG - iterator.Next reverse %t\n", itr.reverse)
 	if itr.reverse {
 		itr.nextReverse()
 	} else {
@@ -297,6 +304,7 @@ func (itr *iterator) Next() {
 }
 
 func (itr *iterator) Valid() bool {
+	fmt.Printf("SSDEBUG - iterator.Valid\n")
 	// once invalid, forever invalid
 	if !itr.valid || !itr.source.Valid() {
 		itr.valid = false
@@ -321,10 +329,12 @@ func (itr *iterator) Valid() bool {
 }
 
 func (itr *iterator) Error() error {
+	fmt.Printf("SSDEBUG - iterator.Error\n")
 	return itr.source.Error()
 }
 
 func (itr *iterator) Close() error {
+	fmt.Printf("SSDEBUG - iterator.Close\n")
 	_ = itr.source.Close()
 	itr.source = nil
 	itr.valid = false
@@ -343,6 +353,7 @@ func (itr *iterator) assertIsValid() {
 // pair is tombstoned, the caller should call Next(). Note, this method assumes
 // the caller assures the iterator is valid first!
 func (itr *iterator) cursorTombstoned() bool {
+	fmt.Printf("SSDEBUG - iterator.cursorTombstoned\n")
 	_, tombBz, ok := SplitMVCCKey(itr.source.Value())
 	if !ok {
 		// XXX: This should not happen as that would indicate we have a malformed
@@ -370,6 +381,7 @@ func (itr *iterator) cursorTombstoned() bool {
 }
 
 func (itr *iterator) DebugRawIterate() {
+	fmt.Printf("SSDEBUG - iterator.DebugRawIterate\n")
 	valid := itr.source.Valid()
 	if valid {
 		// The first key may not represent the desired target version, so move the

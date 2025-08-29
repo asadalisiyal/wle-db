@@ -176,6 +176,7 @@ func (db *Database) Close() error {
 }
 
 func (db *Database) SetLatestVersion(version int64) error {
+	fmt.Printf("SSDEBUG - SetLatestVersion version %d\n", version)
 	var ts [VersionSize]byte
 	binary.LittleEndian.PutUint64(ts[:], uint64(version))
 	err := db.storage.Set([]byte(latestVersionKey), ts[:], defaultWriteOpts)
@@ -183,6 +184,7 @@ func (db *Database) SetLatestVersion(version int64) error {
 }
 
 func (db *Database) GetLatestVersion() (int64, error) {
+	fmt.Printf("SSDEBUG - GetLatestVersion\n")
 	bz, closer, err := db.storage.Get([]byte(latestVersionKey))
 	if err != nil {
 		if errors.Is(err, pebble.ErrNotFound) {
@@ -201,6 +203,7 @@ func (db *Database) GetLatestVersion() (int64, error) {
 }
 
 func (db *Database) SetEarliestVersion(version int64, ignoreVersion bool) error {
+	fmt.Printf("SSDEBUG - SetEarliestVersion version %d ignoreVersion %t\n", version, ignoreVersion)
 	if version > db.earliestVersion || ignoreVersion {
 		db.earliestVersion = version
 
@@ -212,10 +215,12 @@ func (db *Database) SetEarliestVersion(version int64, ignoreVersion bool) error 
 }
 
 func (db *Database) GetEarliestVersion() (int64, error) {
+	fmt.Printf("SSDEBUG - GetEarliestVersion\n")
 	return db.earliestVersion, nil
 }
 
 func (db *Database) SetLastRangeHashed(latestHashed int64) error {
+	fmt.Printf("SSDEBUG - SetLastRangeHashed latestHashed %d\n", latestHashed)
 	var ts [VersionSize]byte
 	binary.LittleEndian.PutUint64(ts[:], uint64(latestHashed))
 
@@ -229,6 +234,7 @@ func (db *Database) SetLastRangeHashed(latestHashed int64) error {
 
 // GetLastRangeHashed returns the highest block that has been fully hashed in ranges.
 func (db *Database) GetLastRangeHashed() (int64, error) {
+	fmt.Printf("SSDEBUG - GetLastRangeHashed\n")
 	// Return the cached value
 	db.lastRangeHashedMu.RLock()
 	cachedValue := db.lastRangeHashedCache
@@ -258,11 +264,13 @@ func retrieveEarliestVersion(db *pebble.DB) (int64, error) {
 
 // SetLatestKey sets the latest key processed during migration.
 func (db *Database) SetLatestMigratedKey(key []byte) error {
+	fmt.Printf("SSDEBUG - SetLatestMigratedKey key length %d\n", len(key))
 	return db.storage.Set([]byte(latestMigratedKeyMetadata), key, defaultWriteOpts)
 }
 
 // GetLatestKey retrieves the latest key processed during migration.
 func (db *Database) GetLatestMigratedKey() ([]byte, error) {
+	fmt.Printf("SSDEBUG - GetLatestMigratedKey\n")
 	bz, closer, err := db.storage.Get([]byte(latestMigratedKeyMetadata))
 	if err != nil {
 		if errors.Is(err, pebble.ErrNotFound) {
@@ -276,11 +284,13 @@ func (db *Database) GetLatestMigratedKey() ([]byte, error) {
 
 // SetLatestModule sets the latest module processed during migration.
 func (db *Database) SetLatestMigratedModule(module string) error {
+	fmt.Printf("SSDEBUG - SetLatestMigratedModule module %s\n", module)
 	return db.storage.Set([]byte(latestMigratedModuleMetadata), []byte(module), defaultWriteOpts)
 }
 
 // GetLatestModule retrieves the latest module processed during migration.
 func (db *Database) GetLatestMigratedModule() (string, error) {
+	fmt.Printf("SSDEBUG - GetLatestMigratedModule\n")
 	bz, closer, err := db.storage.Get([]byte(latestMigratedModuleMetadata))
 	if err != nil {
 		if errors.Is(err, pebble.ErrNotFound) {
@@ -293,6 +303,7 @@ func (db *Database) GetLatestMigratedModule() (string, error) {
 }
 
 func (db *Database) Has(storeKey string, version int64, key []byte) (bool, error) {
+	fmt.Printf("SSDEBUG - Has storeKey %s version %d key length %d\n", storeKey, version, len(key))
 	if version < db.earliestVersion {
 		return false, nil
 	}
@@ -306,6 +317,7 @@ func (db *Database) Has(storeKey string, version int64, key []byte) (bool, error
 }
 
 func (db *Database) Get(storeKey string, targetVersion int64, key []byte) ([]byte, error) {
+	fmt.Printf("SSDEBUG - Get storeKey %s targetVersion %d key length %d\n", storeKey, targetVersion, len(key))
 	if targetVersion < db.earliestVersion {
 		return nil, nil
 	}
@@ -346,6 +358,7 @@ func (db *Database) Get(storeKey string, targetVersion int64, key []byte) ([]byt
 }
 
 func (db *Database) ApplyChangeset(version int64, cs *proto.NamedChangeSet) error {
+	fmt.Printf("SSDEBUG - ApplyChangeset version %d store %s pairs length %d\n", version, cs.Name, len(cs.Changeset.Pairs))
 	// Check if version is 0 and change it to 1
 	// We do this specifically since keys written as part of genesis state come in as version 0
 	// But pebbledb treats version 0 as special, so apply the changeset at version 1 instead
@@ -377,6 +390,7 @@ func (db *Database) ApplyChangeset(version int64, cs *proto.NamedChangeSet) erro
 }
 
 func (db *Database) ApplyChangesetAsync(version int64, changesets []*proto.NamedChangeSet) error {
+	fmt.Printf("SSDEBUG - ApplyChangesetAsync version %d changesets length %d\n", version, len(changesets))
 	// Write to WAL first
 	if db.streamHandler != nil {
 		entry := proto.ChangelogEntry{
@@ -413,6 +427,7 @@ func (db *Database) ApplyChangesetAsync(version int64, changesets []*proto.Named
 }
 
 func (db *Database) computeMissingRanges(latestVersion int64) error {
+	fmt.Printf("SSDEBUG - computeMissingRanges latestVersion %d\n", latestVersion)
 	lastHashed, err := db.GetLastRangeHashed()
 	if err != nil {
 		return fmt.Errorf("failed to get last hashed range: %w", err)
@@ -446,6 +461,7 @@ func (db *Database) computeMissingRanges(latestVersion int64) error {
 }
 
 func (db *Database) computeHashForRange(beginBlock, endBlock int64) error {
+	fmt.Printf("SSDEBUG - computeHashForRange beginBlock %d endBlock %d\n", beginBlock, endBlock)
 	chunkSize := endBlock - beginBlock + 1
 	if chunkSize <= 0 {
 		// Nothing to do
@@ -534,6 +550,7 @@ func (db *Database) writeAsyncInBackground() {
 // it has been updated. This occurs when that module's keys are updated in between pruning runs, the node after is restarted.
 // This is not a large issue given the next time that module is updated, it will be properly pruned thereafter.
 func (db *Database) Prune(version int64) error {
+	fmt.Printf("SSDEBUG - Prune version %d\n", version)
 	earliestVersion := version + 1 // we increment by 1 to include the provided version
 
 	itr, err := db.storage.NewIter(nil)
@@ -639,6 +656,7 @@ func (db *Database) Prune(version int64) error {
 }
 
 func (db *Database) Iterator(storeKey string, version int64, start, end []byte) (types.DBIterator, error) {
+	fmt.Printf("SSDEBUG - Iterator storeKey %s version %d start length %d end length %d\n", storeKey, version, len(start), len(end))
 	if (start != nil && len(start) == 0) || (end != nil && len(end) == 0) {
 		return nil, errorutils.ErrKeyEmpty
 	}
@@ -677,6 +695,7 @@ func prefixEnd(b []byte) []byte {
 }
 
 func (db *Database) ReverseIterator(storeKey string, version int64, start, end []byte) (types.DBIterator, error) {
+	fmt.Printf("SSDEBUG - ReverseIterator storeKey %s version %d start length %d end length %d\n", storeKey, version, len(start), len(end))
 	if (start != nil && len(start) == 0) || (end != nil && len(end) == 0) {
 		return nil, errorutils.ErrKeyEmpty
 	}
@@ -705,6 +724,7 @@ func (db *Database) ReverseIterator(storeKey string, version int64, start, end [
 // Import loads the initial version of the state in parallel with numWorkers goroutines
 // TODO: Potentially add retries instead of panics
 func (db *Database) Import(version int64, ch <-chan types.SnapshotNode) error {
+	fmt.Printf("SSDEBUG - Import version %d\n", version)
 	var wg sync.WaitGroup
 
 	worker := func() {
@@ -752,6 +772,7 @@ func (db *Database) Import(version int64, ch <-chan types.SnapshotNode) error {
 }
 
 func (db *Database) RawImport(ch <-chan types.RawSnapshotNode) error {
+	fmt.Printf("SSDEBUG - RawImport\n")
 	var wg sync.WaitGroup
 
 	worker := func() {
@@ -834,6 +855,7 @@ func (db *Database) RawImport(ch <-chan types.RawSnapshotNode) error {
 
 // RawIterate iterates over all keys and values for a store
 func (db *Database) RawIterate(storeKey string, fn func(key []byte, value []byte, version int64) bool) (bool, error) {
+	fmt.Printf("SSDEBUG - RawIterate storeKey %s\n", storeKey)
 	// Iterate through all keys and values for a store
 	lowerBound := MVCCEncode(prependStoreKey(storeKey, nil), 0)
 	prefix := storePrefix(storeKey)
@@ -892,6 +914,7 @@ func (db *Database) RawIterate(storeKey string, fn func(key []byte, value []byte
 }
 
 func (db *Database) DeleteKeysAtVersion(module string, version int64) error {
+	fmt.Printf("SSDEBUG - DeleteKeysAtVersion module %s version %d\n", module, version)
 
 	batch, err := NewBatch(db.storage, version)
 	if err != nil {
@@ -1024,6 +1047,7 @@ func valTombstoned(value []byte) bool {
 
 // WriteBlockRangeHash writes a hash for a range of blocks to the database
 func (db *Database) WriteBlockRangeHash(storeKey string, beginBlockRange, endBlockRange int64, hash []byte) error {
+	fmt.Printf("SSDEBUG - WriteBlockRangeHash storeKey %s beginBlockRange %d endBlockRange %d hash length %d\n", storeKey, beginBlockRange, endBlockRange, len(hash))
 	key := []byte(fmt.Sprintf(HashTpl, storeKey, beginBlockRange, endBlockRange))
 	err := db.storage.Set(key, hash, defaultWriteOpts)
 	if err != nil {
