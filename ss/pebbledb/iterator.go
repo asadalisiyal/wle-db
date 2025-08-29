@@ -29,7 +29,14 @@ type iterator struct {
 }
 
 func newPebbleDBIterator(src *pebble.Iterator, prefix, mvccStart, mvccEnd []byte, version int64, earliestVersion int64, reverse bool) *iterator {
-	fmt.Printf("SSDEBUG - newPebbleDBIterator prefix length %d mvccStart length %d mvccEnd length %d version %d earliestVersion %d reverse %t\n", len(prefix), len(mvccStart), len(mvccEnd), version, earliestVersion, reverse)
+	var startStr, endStr string
+	if mvccStart != nil {
+		startStr = string(mvccStart)
+	}
+	if mvccEnd != nil {
+		endStr = string(mvccEnd)
+	}
+	fmt.Printf("SSDEBUG - newPebbleDBIterator prefix %s (length %d) mvccStart %s (length %d) mvccEnd %s (length %d) version %d earliestVersion %d reverse %t\n", string(prefix), len(prefix), startStr, len(mvccStart), endStr, len(mvccEnd), version, earliestVersion, reverse)
 	// Return invalid iterator if requested iterator height is lower than earliest version after pruning
 	if version < earliestVersion {
 		return &iterator{
@@ -117,7 +124,9 @@ func (itr *iterator) Key() []byte {
 	}
 
 	keyCopy := slices.Clone(key)
-	return keyCopy[len(itr.prefix):]
+	result := keyCopy[len(itr.prefix):]
+	fmt.Printf("SSDEBUG - iterator.Key returning key %s (length %d)\n", string(result), len(result))
+	return result
 }
 
 func (itr *iterator) Value() []byte {
@@ -131,7 +140,9 @@ func (itr *iterator) Value() []byte {
 		panic(fmt.Sprintf("invalid PebbleDB MVCC value: %s", itr.source.Key()))
 	}
 
-	return slices.Clone(val)
+	result := slices.Clone(val)
+	fmt.Printf("SSDEBUG - iterator.Value returning value %s (length %d)\n", string(result), len(result))
+	return result
 }
 
 func (itr *iterator) nextForward() {

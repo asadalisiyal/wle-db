@@ -264,7 +264,7 @@ func retrieveEarliestVersion(db *pebble.DB) (int64, error) {
 
 // SetLatestKey sets the latest key processed during migration.
 func (db *Database) SetLatestMigratedKey(key []byte) error {
-	fmt.Printf("SSDEBUG - SetLatestMigratedKey key length %d\n", len(key))
+	fmt.Printf("SSDEBUG - SetLatestMigratedKey key %s (length %d)\n", string(key), len(key))
 	return db.storage.Set([]byte(latestMigratedKeyMetadata), key, defaultWriteOpts)
 }
 
@@ -303,7 +303,7 @@ func (db *Database) GetLatestMigratedModule() (string, error) {
 }
 
 func (db *Database) Has(storeKey string, version int64, key []byte) (bool, error) {
-	fmt.Printf("SSDEBUG - Has storeKey %s version %d key length %d\n", storeKey, version, len(key))
+	fmt.Printf("SSDEBUG - Has storeKey %s version %d key %s (length %d)\n", storeKey, version, string(key), len(key))
 	if version < db.earliestVersion {
 		return false, nil
 	}
@@ -317,7 +317,7 @@ func (db *Database) Has(storeKey string, version int64, key []byte) (bool, error
 }
 
 func (db *Database) Get(storeKey string, targetVersion int64, key []byte) ([]byte, error) {
-	fmt.Printf("SSDEBUG - Get storeKey %s targetVersion %d key length %d\n", storeKey, targetVersion, len(key))
+	fmt.Printf("SSDEBUG - Get storeKey %s targetVersion %d key %s (length %d)\n", storeKey, targetVersion, string(key), len(key))
 	if targetVersion < db.earliestVersion {
 		return nil, nil
 	}
@@ -656,7 +656,14 @@ func (db *Database) Prune(version int64) error {
 }
 
 func (db *Database) Iterator(storeKey string, version int64, start, end []byte) (types.DBIterator, error) {
-	fmt.Printf("SSDEBUG - Iterator storeKey %s version %d start length %d end length %d\n", storeKey, version, len(start), len(end))
+	var startStr, endStr string
+	if start != nil {
+		startStr = string(start)
+	}
+	if end != nil {
+		endStr = string(end)
+	}
+	fmt.Printf("SSDEBUG - Iterator storeKey %s version %d start %s (length %d) end %s (length %d)\n", storeKey, version, startStr, len(start), endStr, len(end))
 	if (start != nil && len(start) == 0) || (end != nil && len(end) == 0) {
 		return nil, errorutils.ErrKeyEmpty
 	}
@@ -695,7 +702,14 @@ func prefixEnd(b []byte) []byte {
 }
 
 func (db *Database) ReverseIterator(storeKey string, version int64, start, end []byte) (types.DBIterator, error) {
-	fmt.Printf("SSDEBUG - ReverseIterator storeKey %s version %d start length %d end length %d\n", storeKey, version, len(start), len(end))
+	var startStr, endStr string
+	if start != nil {
+		startStr = string(start)
+	}
+	if end != nil {
+		endStr = string(end)
+	}
+	fmt.Printf("SSDEBUG - ReverseIterator storeKey %s version %d start %s (length %d) end %s (length %d)\n", storeKey, version, startStr, len(start), endStr, len(end))
 	if (start != nil && len(start) == 0) || (end != nil && len(end) == 0) {
 		return nil, errorutils.ErrKeyEmpty
 	}
@@ -1047,7 +1061,7 @@ func valTombstoned(value []byte) bool {
 
 // WriteBlockRangeHash writes a hash for a range of blocks to the database
 func (db *Database) WriteBlockRangeHash(storeKey string, beginBlockRange, endBlockRange int64, hash []byte) error {
-	fmt.Printf("SSDEBUG - WriteBlockRangeHash storeKey %s beginBlockRange %d endBlockRange %d hash length %d\n", storeKey, beginBlockRange, endBlockRange, len(hash))
+	fmt.Printf("SSDEBUG - WriteBlockRangeHash storeKey %s beginBlockRange %d endBlockRange %d hash %s (length %d)\n", storeKey, beginBlockRange, endBlockRange, string(hash), len(hash))
 	key := []byte(fmt.Sprintf(HashTpl, storeKey, beginBlockRange, endBlockRange))
 	err := db.storage.Set(key, hash, defaultWriteOpts)
 	if err != nil {
