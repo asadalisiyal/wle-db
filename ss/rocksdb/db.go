@@ -328,6 +328,10 @@ func (db *Database) RawIterate(storeKey string, fn func(key []byte, value []byte
 	return false, nil
 }
 
+func (db *Database) DeleteKeysAtVersion(module string, version int64) error {
+	panic("not implemented")
+}
+
 // newTSReadOptions returns ReadOptions used in the RocksDB column family read.
 func newTSReadOptions(version int64) *grocksdb.ReadOptions {
 	var ts [TimestampSize]byte
