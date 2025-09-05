@@ -22,8 +22,9 @@ import (
 const (
 	TimestampSize = 8
 
-	StorePrefixTpl   = "s/k:%s/"
-	latestVersionKey = "s/latest"
+	StorePrefixTpl     = "s/k:%s/"
+	latestVersionKey   = "s/latest"
+	earliestVersionKey = "s/earliest"
 
 	// TODO: Make configurable
 	ImportCommitBatchSize = 10000
@@ -45,6 +46,9 @@ type Database struct {
 	// a lazy manner, we use this value to prevent reads for versions that will
 	// be purged in the next compaction.
 	tsLow int64
+
+	// Earliest version for db after pruning
+	earliestVersion int64
 }
 
 func New(dataDir string, config config.StateStoreConfig) (*Database, error) {
@@ -64,11 +68,17 @@ func New(dataDir string, config config.StateStoreConfig) (*Database, error) {
 		tsLow = int64(binary.LittleEndian.Uint64(tsLowBz))
 	}
 
+	earliestVersion, err := retrieveEarliestVersion(storage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve earliest version: %w", err)
+	}
+
 	return &Database{
-		storage:  storage,
-		config:   config,
-		cfHandle: cfHandle,
-		tsLow:    tsLow,
+		storage:         storage,
+		config:          config,
+		cfHandle:        cfHandle,
+		tsLow:           tsLow,
+		earliestVersion: earliestVersion,
 	}, nil
 }
 
@@ -83,10 +93,17 @@ func NewWithDB(storage *grocksdb.DB, cfHandle *grocksdb.ColumnFamilyHandle) (*Da
 	if len(tsLowBz) > 0 {
 		tsLow = int64(binary.LittleEndian.Uint64(tsLowBz))
 	}
+
+	earliestVersion, err := retrieveEarliestVersion(storage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve earliest version: %w", err)
+	}
+
 	return &Database{
-		storage:  storage,
-		cfHandle: cfHandle,
-		tsLow:    tsLow,
+		storage:         storage,
+		cfHandle:        cfHandle,
+		tsLow:           tsLow,
+		earliestVersion: earliestVersion,
 	}, nil
 }
 
@@ -129,11 +146,18 @@ func (db *Database) GetLatestVersion() (int64, error) {
 }
 
 func (db *Database) SetEarliestVersion(version int64, ignoreVersion bool) error {
-	panic("not implemented")
+	if version > db.earliestVersion || ignoreVersion {
+		db.earliestVersion = version
+
+		var ts [TimestampSize]byte
+		binary.LittleEndian.PutUint64(ts[:], uint64(version))
+		return db.storage.Put(defaultWriteOpts, []byte(earliestVersionKey), ts[:])
+	}
+	return nil
 }
 
 func (db *Database) GetEarliestVersion() (int64, error) {
-	panic("not implemented")
+	return db.earliestVersion, nil
 }
 
 func (db *Database) Has(storeKey string, version int64, key []byte) (bool, error) {
@@ -402,4 +426,21 @@ func (db *Database) RawImport(ch <-chan types.RawSnapshotNode) error {
 // WriteBlockRangeHash writes a hash for a range of blocks to the database
 func (db *Database) WriteBlockRangeHash(storeKey string, beginBlockRange, endBlockRange int64, hash []byte) error {
 	panic("implement me")
+}
+
+// retrieveEarliestVersion retrieves the earliest version from the database
+func retrieveEarliestVersion(storage *grocksdb.DB) (int64, error) {
+	bz, err := storage.GetBytes(defaultReadOpts, []byte(earliestVersionKey))
+	if err != nil {
+		// Assuming RocksDB returns an error for key not found similar to how PebbleDB uses pebble.ErrNotFound
+		// We'll treat any error as "not found" for now, but this might need adjustment based on grocksdb behavior
+		return 0, nil
+	}
+
+	if len(bz) == 0 {
+		// in case of a fresh database
+		return 0, nil
+	}
+
+	return int64(binary.LittleEndian.Uint64(bz)), nil
 }
