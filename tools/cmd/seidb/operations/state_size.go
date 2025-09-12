@@ -83,6 +83,9 @@ func PrintStateSize(module string, db *memiavl.DB) error {
 			valueSizeByPrefix := map[string]int64{}
 			numKeysByPrefix := map[string]int64{}
 			contractSizes := make(map[string]*contractSizeEntry)
+			// Track zeroed value slots for EVM 0x03 prefix
+			var totalValueSlots03 int64
+			var zeroedValueSlots03 int64
 			// Scan again to collect per-contract statistics
 			tree.ScanPostOrder(func(node memiavl.Node) bool {
 				if node.IsLeaf() {
@@ -99,6 +102,11 @@ func PrintStateSize(module string, db *memiavl.DB) error {
 					numKeysByPrefix[prefix]++
 
 					if module == "evm" && prefix == "03" {
+						// Count total value slots and zeroed-out slots for EVM storage (0x03 prefix)
+						totalValueSlots03++
+						if isAllZero(node.Value()) {
+							zeroedValueSlots03++
+						}
 						// Extract contract address from key (assuming it follows after "03")
 						addr := prefixKey[2:42] // Adjust indices based on your key format
 						if _, exists := contractSizes[addr]; !exists {
@@ -124,6 +132,15 @@ func PrintStateSize(module string, db *memiavl.DB) error {
 			fmt.Printf("Module %s prefix value size breakdown (bytes): %s \n", moduleName, prefixValueResult)
 			numKeysResult, _ := json.MarshalIndent(numKeysByPrefix, "", "  ")
 			fmt.Printf("Module %s prefix num of keys breakdown: %s \n", moduleName, numKeysResult)
+
+			// Print zeroed-out value slot statistics for EVM 0x03 prefix
+			if module == "evm" {
+				var percentZeroed float64
+				if totalValueSlots03 > 0 {
+					percentZeroed = float64(zeroedValueSlots03) / float64(totalValueSlots03) * 100
+				}
+				fmt.Printf("EVM 0x03 value slots: total=%d, zeroed=%d (%.2f%%)\n", totalValueSlots03, zeroedValueSlots03, percentZeroed)
+			}
 
 			// Convert map to slice
 			var sortedContracts []contractSizeEntry
@@ -155,4 +172,14 @@ func PrintStateSize(module string, db *memiavl.DB) error {
 		}
 	}
 	return nil
+}
+
+// isAllZero returns true if the provided byte slice is empty or consists entirely of zero bytes.
+func isAllZero(b []byte) bool {
+	for _, by := range b {
+		if by != 0x00 {
+			return false
+		}
+	}
+	return true
 }
