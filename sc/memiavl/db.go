@@ -109,7 +109,7 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 
 		// cleanup any temporary directories left by interrupted snapshot rewrite
 		// but preserve resumable snapshots
-		if err := cleanupTmpDirs(opts.Dir); err != nil {
+		if err := CleanupTmpDirs(opts.Dir, logger); err != nil {
 			return nil, fmt.Errorf("fail to cleanup tmp directories: %w", err)
 		}
 	}
@@ -235,8 +235,8 @@ func removeTmpDirs(rootDir string) error {
 	return nil
 }
 
-// cleanupTmpDirs removes non-resumable temporary directories but preserves resumable ones
-func cleanupTmpDirs(rootDir string) error {
+// CleanupTmpDirs removes non-resumable temporary directories but preserves resumable ones
+func CleanupTmpDirs(rootDir string, logger logger.Logger) error {
 	entries, err := os.ReadDir(rootDir)
 	if err != nil {
 		return err
@@ -251,13 +251,15 @@ func cleanupTmpDirs(rootDir string) error {
 
 		// Check if this snapshot is resumable
 		if IsResumableSnapshot(snapshotDir) {
-			// Log that we found a resumable snapshot
-			// TODO: Add logger parameter to this function
+			logger.Info("preserving resumable snapshot", "path", snapshotDir)
 			continue
 		}
 
 		// Remove non-resumable temporary directories
+		logger.Info("removing non-resumable temporary snapshot", "path", snapshotDir)
 		if err := os.RemoveAll(snapshotDir); err != nil {
+			logger.Error("failed to remove non-resumable temporary snapshot",
+				"path", snapshotDir, "error", err)
 			return err
 		}
 	}
@@ -548,9 +550,24 @@ func (db *DB) RewriteSnapshot(ctx context.Context) error {
 	if IsResumableSnapshot(path) {
 		db.logger.Info("resuming snapshot creation", "path", path)
 		if err := db.resumeSnapshotFromFiles(ctx, path); err != nil {
-			return err
+			db.logger.Error("failed to resume snapshot, falling back to fresh creation",
+				"path", path, "error", err)
+
+			// Remove the corrupted partial snapshot and start fresh
+			if removeErr := os.RemoveAll(path); removeErr != nil {
+				db.logger.Error("failed to remove corrupted partial snapshot",
+					"path", path, "error", removeErr)
+			} else {
+				db.logger.Info("removed corrupted partial snapshot", "path", path)
+			}
+
+			// Create fresh snapshot
+			if err := db.MultiTree.WriteSnapshot(ctx, path, db.snapshotWriterPool); err != nil {
+				return errorutils.Join(err, os.RemoveAll(path))
+			}
 		}
 	} else {
+		db.logger.Info("no resumable snapshot found, creating fresh snapshot", "path", path)
 		if err := db.MultiTree.WriteSnapshot(ctx, path, db.snapshotWriterPool); err != nil {
 			return errorutils.Join(err, os.RemoveAll(path))
 		}
