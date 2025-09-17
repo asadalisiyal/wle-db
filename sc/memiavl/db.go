@@ -108,7 +108,8 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 		}
 
 		// cleanup any temporary directories left by interrupted snapshot rewrite
-		if err := removeTmpDirs(opts.Dir); err != nil {
+		// but preserve resumable snapshots
+		if err := cleanupTmpDirs(opts.Dir); err != nil {
 			return nil, fmt.Errorf("fail to cleanup tmp directories: %w", err)
 		}
 	}
@@ -227,6 +228,36 @@ func removeTmpDirs(rootDir string) error {
 		}
 
 		if err := os.RemoveAll(filepath.Join(rootDir, entry.Name())); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// cleanupTmpDirs removes non-resumable temporary directories but preserves resumable ones
+func cleanupTmpDirs(rootDir string) error {
+	entries, err := os.ReadDir(rootDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasSuffix(entry.Name(), "-tmp") {
+			continue
+		}
+
+		snapshotDir := filepath.Join(rootDir, entry.Name())
+
+		// Check if this snapshot is resumable
+		if IsResumableSnapshot(snapshotDir) {
+			// Log that we found a resumable snapshot
+			// TODO: Add logger parameter to this function
+			continue
+		}
+
+		// Remove non-resumable temporary directories
+		if err := os.RemoveAll(snapshotDir); err != nil {
 			return err
 		}
 	}
@@ -512,13 +543,66 @@ func (db *DB) RewriteSnapshot(ctx context.Context) error {
 	snapshotDir := snapshotName(db.lastCommitInfo.Version)
 	tmpDir := snapshotDir + "-tmp"
 	path := filepath.Join(db.dir, tmpDir)
-	if err := db.MultiTree.WriteSnapshot(ctx, path, db.snapshotWriterPool); err != nil {
-		return errorutils.Join(err, os.RemoveAll(path))
+
+	// Check if there's a resumable snapshot
+	if IsResumableSnapshot(path) {
+		db.logger.Info("resuming snapshot creation", "path", path)
+		if err := db.resumeSnapshotFromFiles(ctx, path); err != nil {
+			return err
+		}
+	} else {
+		if err := db.MultiTree.WriteSnapshot(ctx, path, db.snapshotWriterPool); err != nil {
+			return errorutils.Join(err, os.RemoveAll(path))
+		}
 	}
+
 	if err := os.Rename(path, filepath.Join(db.dir, snapshotDir)); err != nil {
 		return err
 	}
-	return updateCurrentSymlink(db.dir, snapshotDir)
+
+	if err := updateCurrentSymlink(db.dir, snapshotDir); err != nil {
+		return err
+	}
+
+	// Reload to switch to the new snapshot and apply pending changes
+	return db.reload()
+}
+
+// resumeSnapshotFromFiles resumes a partially created snapshot by analyzing file sizes
+func (db *DB) resumeSnapshotFromFiles(ctx context.Context, snapshotDir string) error {
+	resumeInfo, err := AnalyzePartialSnapshot(snapshotDir)
+	if err != nil {
+		return fmt.Errorf("failed to analyze partial snapshot: %w", err)
+	}
+
+	db.logger.Info("resuming snapshot",
+		"written_nodes", resumeInfo.WrittenNodes,
+		"written_leaves", resumeInfo.WrittenLeaves,
+		"nodes_file_pos", resumeInfo.NodesFilePos,
+		"leaves_file_pos", resumeInfo.LeavesFilePos)
+
+	// Resume the snapshot creation for each tree
+	// For simplicity, we'll resume each tree individually
+	// In a more sophisticated implementation, we could track per-tree progress
+	for _, entry := range db.MultiTree.trees {
+		tree, name := entry.Tree, entry.Name
+		treeDir := filepath.Join(snapshotDir, name)
+
+		if err := tree.WriteSnapshotResumableFromFiles(ctx, treeDir); err != nil {
+			return fmt.Errorf("failed to resume tree %s: %w", name, err)
+		}
+	}
+
+	// Write commit info
+	metadata := proto.MultiTreeMetadata{
+		CommitInfo:     &db.lastCommitInfo,
+		InitialVersion: int64(db.initialVersion),
+	}
+	bz, err := metadata.Marshal()
+	if err != nil {
+		return err
+	}
+	return WriteFileSync(filepath.Join(snapshotDir, MetadataFileName), bz)
 }
 
 func (db *DB) Reload() error {
