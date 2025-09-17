@@ -559,13 +559,7 @@ func (db *DB) RewriteSnapshot(ctx context.Context) error {
 	if err := os.Rename(path, filepath.Join(db.dir, snapshotDir)); err != nil {
 		return err
 	}
-
-	if err := updateCurrentSymlink(db.dir, snapshotDir); err != nil {
-		return err
-	}
-
-	// Reload to switch to the new snapshot and apply pending changes
-	return db.reload()
+	return updateCurrentSymlink(db.dir, snapshotDir)
 }
 
 // resumeSnapshotFromFiles resumes a partially created snapshot by analyzing file sizes

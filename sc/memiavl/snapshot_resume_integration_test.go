@@ -308,8 +308,12 @@ func TestResumableSnapshotIntegration(t *testing.T) {
 	defer db2.Close()
 
 	// Step 7: Test resuming the snapshot creation by calling RewriteSnapshot
-	// This should automatically detect the resumable snapshot, complete it, and switch to it
+	// This should automatically detect the resumable snapshot and complete it
 	err = db2.RewriteSnapshot(context.Background())
+	require.NoError(t, err)
+
+	// Step 7b: Reload to switch to the new snapshot and apply pending changes
+	err = db2.Reload()
 	require.NoError(t, err)
 
 	// Step 8: Verify the DB has switched to the new snapshot
