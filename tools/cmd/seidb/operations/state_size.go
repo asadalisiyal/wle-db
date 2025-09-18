@@ -240,6 +240,10 @@ func printResultsToConsole(moduleResults map[string]*ModuleResult) {
 		fmt.Printf("Module %s total numKeys:%d, total keySize:%d, total valueSize:%d, totalSize: %d \n",
 			result.ModuleName, result.TotalNumKeys, result.TotalKeySize, result.TotalValueSize, result.TotalSize)
 
+		fmt.Println("prefix sizes: ", result.PrefixSizes)
+		fmt.Println("module name: ", moduleName)
+		fmt.Println("Prefix Sizes[moduleName]: ", result.PrefixSizes[moduleName])
+
 		prefixKeyResult, _ := json.MarshalIndent(result.PrefixSizes[moduleName].KeySize, "", "  ")
 		fmt.Printf("Module %s prefix key size breakdown (bytes): %s \n", result.ModuleName, prefixKeyResult)
 
