@@ -107,6 +107,7 @@ func collectModuleStats(tree *memiavl.Tree, moduleName string) *ModuleResult {
 				result.TotalEVM03Entries++
 				if isAllZero(node.Value()) {
 					result.ZeroedEVM03Entries++
+					result.ZeroedEVM03KeyBytes += uint64(keySize)
 					result.ZeroedEVM03ValueBytes += uint64(valueSize)
 				}
 				addr := prefixKey[2:42]
@@ -172,6 +173,7 @@ type ModuleResult struct {
 	// EVM-specific statistics for 0x03 storage prefix
 	TotalEVM03Entries     uint64
 	ZeroedEVM03Entries    uint64
+	ZeroedEVM03KeyBytes   uint64
 	ZeroedEVM03ValueBytes uint64
 }
 
@@ -263,10 +265,11 @@ func printResultsToConsole(moduleResults map[string]*ModuleResult) {
 			if result.TotalEVM03Entries > 0 {
 				pct = float64(result.ZeroedEVM03Entries) / float64(result.TotalEVM03Entries) * 100
 			}
-			fmt.Printf("EVM 0x03 entries: total=%d, zeroed=%d (%.2f%%), zeroed_value_bytes=%d\n",
+			fmt.Printf("EVM 0x03 entries: total=%d, zeroed=%d (%.2f%%), zeroed_key_bytes=%d, zeroed_value_bytes=%d\n",
 				result.TotalEVM03Entries,
 				result.ZeroedEVM03Entries,
 				pct,
+				result.ZeroedEVM03KeyBytes,
 				result.ZeroedEVM03ValueBytes,
 			)
 		}
