@@ -104,7 +104,7 @@ func collectModuleStats(tree *memiavl.Tree, moduleName string) *ModuleResult {
 
 			// Handle EVM contract analysis
 			if moduleName == "evm" && prefix == "03" {
-				// Track zeroed-out value slots and totals for 0x03 prefix
+				fmt.Println("evm 0x03 prefix found")
 				result.TotalEVM03Entries++
 				if isAllZero(node.Value()) {
 					result.ZeroedEVM03Entries++
@@ -117,12 +117,12 @@ func collectModuleStats(tree *memiavl.Tree, moduleName string) *ModuleResult {
 				entry := result.ContractSizes[addr]
 				entry.TotalSize += uint64(len(node.Key()) + len(node.Value()))
 				entry.KeyCount++
+				fmt.Println("returning false in evm 0x03 prefix")
+				return false // quick fail for debugging, remove later
 			}
 
 			if result.TotalNumKeys%1000000 == 0 {
 				fmt.Printf("Scanned %d keys for module %s\n", result.TotalNumKeys, moduleName)
-				fmt.Println("returning false")
-				return false // quick fail for debugging, remove later
 			}
 		}
 		return true
@@ -243,10 +243,6 @@ func printResultsToConsole(moduleResults map[string]*ModuleResult) {
 			result.ModuleName, result.TotalNumKeys, result.TotalKeySize, result.TotalValueSize, result.TotalSize)
 
 		fmt.Println("prefix sizes: ", result.PrefixSizes)
-		for prefix, size := range result.PrefixSizes {
-			fmt.Println("prefix: ", prefix)
-			fmt.Println("size: ", size.KeySize, size.ValueSize, size.TotalSize, size.KeyCount)
-		}
 		fmt.Println("module name: ", moduleName)
 		fmt.Println("Prefix Sizes[moduleName]: ", result.PrefixSizes[moduleName])
 
