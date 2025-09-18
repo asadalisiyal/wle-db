@@ -94,13 +94,13 @@ func collectModuleStats(tree *memiavl.Tree, moduleName string) *ModuleResult {
 
 			prefixKey := fmt.Sprintf("%X", node.Key())
 			prefix := prefixKey[:2]
-			if _, exists := result.PrefixSizes[prefix]; !exists {
-				result.PrefixSizes[prefix] = &utils.PrefixSize{}
+			if _, exists := result.PrefixSizes[moduleName]; !exists {
+				result.PrefixSizes[moduleName] = &utils.PrefixSize{}
 			}
-			result.PrefixSizes[prefix].KeySize += uint64(keySize)
-			result.PrefixSizes[prefix].ValueSize += uint64(valueSize)
-			result.PrefixSizes[prefix].TotalSize += uint64(keySize + valueSize)
-			result.PrefixSizes[prefix].KeyCount++
+			result.PrefixSizes[moduleName].KeySize += uint64(keySize)
+			result.PrefixSizes[moduleName].ValueSize += uint64(valueSize)
+			result.PrefixSizes[moduleName].TotalSize += uint64(keySize + valueSize)
+			result.PrefixSizes[moduleName].KeyCount++
 
 			// Handle EVM contract analysis
 			if moduleName == "evm" && prefix == "03" {
