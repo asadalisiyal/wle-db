@@ -104,7 +104,6 @@ func collectModuleStats(tree *memiavl.Tree, moduleName string) *ModuleResult {
 
 			// Handle EVM contract analysis
 			if moduleName == "evm" && prefix == "03" {
-				fmt.Println("evm 0x03 prefix found")
 				result.TotalEVM03Entries++
 				if isAllZero(node.Value()) {
 					result.ZeroedEVM03Entries++
