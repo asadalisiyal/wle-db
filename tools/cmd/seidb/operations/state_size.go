@@ -117,8 +117,8 @@ func collectModuleStats(tree *memiavl.Tree, moduleName string) *ModuleResult {
 				entry := result.ContractSizes[addr]
 				entry.TotalSize += uint64(len(node.Key()) + len(node.Value()))
 				entry.KeyCount++
-				fmt.Println("returning false in evm 0x03 prefix")
-				return false // quick fail for debugging, remove later
+				// fmt.Println("returning false in evm 0x03 prefix")
+				// return false // quick fail for debugging, remove later
 			}
 
 			if result.TotalNumKeys%1000000 == 0 {
