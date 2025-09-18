@@ -104,6 +104,12 @@ func collectModuleStats(tree *memiavl.Tree, moduleName string) *ModuleResult {
 
 			// Handle EVM contract analysis
 			if moduleName == "evm" && prefix == "03" {
+				// Track zeroed-out value slots and totals for 0x03 prefix
+				result.TotalEVM03Entries++
+				if isAllZero(node.Value()) {
+					result.ZeroedEVM03Entries++
+					result.ZeroedEVM03ValueBytes += uint64(valueSize)
+				}
 				addr := prefixKey[2:42]
 				if _, exists := result.ContractSizes[addr]; !exists {
 					result.ContractSizes[addr] = &utils.ContractSizeEntry{Address: addr}
@@ -162,6 +168,10 @@ type ModuleResult struct {
 	TotalSize      uint64
 	PrefixSizes    map[string]*utils.PrefixSize
 	ContractSizes  map[string]*utils.ContractSizeEntry
+	// EVM-specific statistics for 0x03 storage prefix
+	TotalEVM03Entries     uint64
+	ZeroedEVM03Entries    uint64
+	ZeroedEVM03ValueBytes uint64
 }
 
 // collectAllModuleData scans all modules and collects statistics in memory
@@ -242,6 +252,20 @@ func printResultsToConsole(moduleResults map[string]*ModuleResult) {
 		numKeysResult, _ := json.MarshalIndent(result.PrefixSizes[moduleName].KeyCount, "", "  ")
 		fmt.Printf("Module %s prefix num of keys breakdown: %s \n", result.ModuleName, numKeysResult)
 
+		// EVM-only: zeroed-entry statistics for 0x03 storage
+		if moduleName == "evm" {
+			var pct float64
+			if result.TotalEVM03Entries > 0 {
+				pct = float64(result.ZeroedEVM03Entries) / float64(result.TotalEVM03Entries) * 100
+			}
+			fmt.Printf("EVM 0x03 entries: total=%d, zeroed=%d (%.2f%%), zeroed_value_bytes=%d\n",
+				result.TotalEVM03Entries,
+				result.ZeroedEVM03Entries,
+				pct,
+				result.ZeroedEVM03ValueBytes,
+			)
+		}
+
 		// Display top contracts (already limited to top 100)
 		fmt.Printf("\nDetailed breakdown for 0x03 prefix (top %d contracts by total size):\n", len(result.ContractSizes))
 		fmt.Printf("%-42s %15s %10s\n", "Contract Address", "Total Size", "Key Count")
@@ -289,4 +313,14 @@ func createStateSizeAnalysis(blockHeight int64, moduleName string, result *Modul
 		PrefixBreakdown:   string(prefixJSON),
 		ContractBreakdown: string(contractJSON),
 	}
+}
+
+// isAllZero returns true if the provided byte slice is empty or consists entirely of zero bytes.
+func isAllZero(b []byte) bool {
+	for _, by := range b {
+		if by != 0x00 {
+			return false
+		}
+	}
+	return true
 }
