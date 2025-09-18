@@ -121,6 +121,7 @@ func collectModuleStats(tree *memiavl.Tree, moduleName string) *ModuleResult {
 
 			if result.TotalNumKeys%1000000 == 0 {
 				fmt.Printf("Scanned %d keys for module %s\n", result.TotalNumKeys, moduleName)
+				return false // quick fail for debugging, remove later
 			}
 		}
 		return true
@@ -241,6 +242,10 @@ func printResultsToConsole(moduleResults map[string]*ModuleResult) {
 			result.ModuleName, result.TotalNumKeys, result.TotalKeySize, result.TotalValueSize, result.TotalSize)
 
 		fmt.Println("prefix sizes: ", result.PrefixSizes)
+		for prefix, size := range result.PrefixSizes {
+			fmt.Println("prefix: ", prefix)
+			fmt.Println("size: ", size.KeySize, size.ValueSize, size.TotalSize, size.KeyCount)
+		}
 		fmt.Println("module name: ", moduleName)
 		fmt.Println("Prefix Sizes[moduleName]: ", result.PrefixSizes[moduleName])
 
