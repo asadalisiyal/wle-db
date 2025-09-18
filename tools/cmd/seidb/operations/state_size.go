@@ -121,6 +121,7 @@ func collectModuleStats(tree *memiavl.Tree, moduleName string) *ModuleResult {
 
 			if result.TotalNumKeys%1000000 == 0 {
 				fmt.Printf("Scanned %d keys for module %s\n", result.TotalNumKeys, moduleName)
+				fmt.Println("returning false")
 				return false // quick fail for debugging, remove later
 			}
 		}
