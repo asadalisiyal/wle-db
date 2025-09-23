@@ -23,10 +23,11 @@ const (
 	// magic: uint32, format: uint32, version: uint32
 	SizeMetadata = 12
 
-	FileNameNodes    = "nodes"
-	FileNameLeaves   = "leaves"
-	FileNameKVs      = "kvs"
-	FileNameMetadata = "metadata"
+	FileNameNodes     = "nodes"
+	FileNameLeaves    = "leaves"
+	FileNameKVs       = "kvs"
+	FileNameMetadata  = "metadata"
+	FileNameCompleted = "completed"
 )
 
 // Snapshot manage the lifecycle of mmap-ed files for the snapshot,
@@ -364,9 +365,36 @@ func (t *Tree) WriteSnapshot(ctx context.Context, snapshotDir string) error {
 	})
 }
 
+// SnapshotResumeInfo contains information needed to resume a partial snapshot
+type SnapshotResumeInfo struct {
+	// File positions
+	NodesFilePos  int64
+	LeavesFilePos int64
+	KVsFilePos    int64
+
+	// Counters
+	WrittenNodes  uint32
+	WrittenLeaves uint32
+}
+
+// SnapshotWriteOptions contains options for writing snapshots
+type SnapshotWriteOptions struct {
+	// Resume information for resumable snapshots (nil for fresh snapshots)
+	ResumeInfo *SnapshotResumeInfo
+}
+
 func writeSnapshot(
 	ctx context.Context,
 	dir string, version uint32,
+	doWrite func(*snapshotWriter) (uint32, error),
+) (returnErr error) {
+	return writeSnapshotWithOptions(ctx, dir, version, nil, doWrite)
+}
+
+func writeSnapshotWithOptions(
+	ctx context.Context,
+	dir string, version uint32,
+	opts *SnapshotWriteOptions,
 	doWrite func(*snapshotWriter) (uint32, error),
 ) (returnErr error) {
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
@@ -377,30 +405,64 @@ func writeSnapshot(
 	leavesFile := filepath.Join(dir, FileNameLeaves)
 	kvsFile := filepath.Join(dir, FileNameKVs)
 
-	fpNodes, err := createFile(nodesFile)
-	if err != nil {
-		return err
+	// Determine if we're resuming or starting fresh
+	isResume := opts != nil && opts.ResumeInfo != nil
+
+	// Open files based on mode (fresh vs resume)
+	var fpNodes, fpLeaves, fpKVs *os.File
+	var err error
+
+	if isResume {
+		// Open for append when resuming
+		fpNodes, err = os.OpenFile(nodesFile, os.O_WRONLY|os.O_CREATE, 0o600)
+		if err != nil {
+			return err
+		}
+		fpLeaves, err = os.OpenFile(leavesFile, os.O_WRONLY|os.O_CREATE, 0o600)
+		if err != nil {
+			return err
+		}
+		fpKVs, err = os.OpenFile(kvsFile, os.O_WRONLY|os.O_CREATE, 0o600)
+		if err != nil {
+			return err
+		}
+
+		// Seek to resume positions
+		if _, err := fpNodes.Seek(opts.ResumeInfo.NodesFilePos, 0); err != nil {
+			return err
+		}
+		if _, err := fpLeaves.Seek(opts.ResumeInfo.LeavesFilePos, 0); err != nil {
+			return err
+		}
+		if _, err := fpKVs.Seek(opts.ResumeInfo.KVsFilePos, 0); err != nil {
+			return err
+		}
+	} else {
+		// Create new files when starting fresh
+		fpNodes, err = createFile(nodesFile)
+		if err != nil {
+			return err
+		}
+		fpLeaves, err = createFile(leavesFile)
+		if err != nil {
+			return err
+		}
+		fpKVs, err = createFile(kvsFile)
+		if err != nil {
+			return err
+		}
 	}
+
 	defer func() {
 		if err := fpNodes.Close(); returnErr == nil {
 			returnErr = err
 		}
 	}()
-
-	fpLeaves, err := createFile(leavesFile)
-	if err != nil {
-		return err
-	}
 	defer func() {
 		if err := fpLeaves.Close(); returnErr == nil {
 			returnErr = err
 		}
 	}()
-
-	fpKVs, err := createFile(kvsFile)
-	if err != nil {
-		return err
-	}
 	defer func() {
 		if err := fpKVs.Close(); returnErr == nil {
 			returnErr = err
@@ -412,6 +474,14 @@ func writeSnapshot(
 	kvsWriter := bufio.NewWriterSize(fpKVs, bufIOSize)
 
 	w := newSnapshotWriter(ctx, nodesWriter, leavesWriter, kvsWriter)
+
+	// Set initial counters if resuming
+	if isResume {
+		w.branchCounter = opts.ResumeInfo.WrittenNodes
+		w.leafCounter = opts.ResumeInfo.WrittenLeaves
+		w.kvsOffset = uint64(opts.ResumeInfo.KVsFilePos)
+	}
+
 	leaves, err := doWrite(w)
 	if err != nil {
 		return err
@@ -460,7 +530,13 @@ func writeSnapshot(
 		return err
 	}
 
-	return fpMetadata.Sync()
+	if err := fpMetadata.Sync(); err != nil {
+		return err
+	}
+
+	// Create COMPLETED marker file to indicate this tree snapshot is complete
+	completedFile := filepath.Join(dir, FileNameCompleted)
+	return writeCompletedMarker(completedFile)
 }
 
 type snapshotWriter struct {
@@ -578,4 +654,19 @@ func (w *snapshotWriter) writeRecursive(node Node) error {
 
 func createFile(name string) (*os.File, error) {
 	return os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+}
+
+// writeCompletedMarker creates a COMPLETED marker file to indicate tree snapshot completion
+func writeCompletedMarker(name string) error {
+	f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = f.Write([]byte("completed"))
+	if err == nil {
+		err = f.Sync()
+	}
+	return err
 }

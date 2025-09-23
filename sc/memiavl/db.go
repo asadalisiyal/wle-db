@@ -213,29 +213,11 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 	if db.streamHandler == nil {
 		fmt.Println("[Debug] DB steam handler is nil??")
 	}
+
 	return db, nil
 }
 
-func removeTmpDirs(rootDir string) error {
-	entries, err := os.ReadDir(rootDir)
-	if err != nil {
-		return err
-	}
-
-	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasSuffix(entry.Name(), "-tmp") {
-			continue
-		}
-
-		if err := os.RemoveAll(filepath.Join(rootDir, entry.Name())); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// CleanupTmpDirs removes non-resumable temporary directories but preserves resumable ones
+// CleanupTmpDirs removes temporary directories, preserving only recent resumable ones
 func CleanupTmpDirs(rootDir string, logger logger.Logger) error {
 	entries, err := os.ReadDir(rootDir)
 	if err != nil {
@@ -250,7 +232,7 @@ func CleanupTmpDirs(rootDir string, logger logger.Logger) error {
 		snapshotDir := filepath.Join(rootDir, entry.Name())
 
 		// Check if this snapshot is resumable
-		if IsResumableSnapshot(snapshotDir) {
+		if isSnapshotResumable(snapshotDir) {
 			logger.Info("preserving resumable snapshot", "path", snapshotDir)
 			continue
 		}
@@ -265,6 +247,72 @@ func CleanupTmpDirs(rootDir string, logger logger.Logger) error {
 	}
 
 	return nil
+}
+
+// isSnapshotResumable checks if a snapshot directory contains resumable snapshot data
+func isSnapshotResumable(snapshotDir string) bool {
+	entries, err := os.ReadDir(snapshotDir)
+	if err != nil {
+		return false
+	}
+
+	// Check for snapshot files (kvs, leaves, nodes) in the directory or subdirectories
+	for _, entry := range entries {
+		name := entry.Name()
+		// Check for main snapshot files
+		if name == FileNameNodes || name == FileNameLeaves || name == FileNameKVs {
+			return true
+		}
+		// Check for tree subdirectories (for multi-tree snapshots)
+		if entry.IsDir() {
+			treeDir := filepath.Join(snapshotDir, name)
+			if hasSnapshotDataFiles(treeDir) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// hasSnapshotDataFiles checks if a directory contains snapshot data files
+func hasSnapshotDataFiles(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == FileNameNodes || name == FileNameLeaves || name == FileNameKVs {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isTreeCompleted checks if a tree snapshot is marked as completed
+func isTreeCompleted(treeDir string) bool {
+	completedFile := filepath.Join(treeDir, FileNameCompleted)
+	_, err := os.Stat(completedFile)
+	return err == nil
+}
+
+// hasResumableSnapshots checks if there are any resumable snapshots in the database directory
+func (db *DB) hasResumableSnapshots() bool {
+	entries, err := os.ReadDir(db.dir)
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasSuffix(entry.Name(), "-tmp") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // ReadOnly returns whether the DB is opened in read-only mode.
@@ -581,24 +629,21 @@ func (db *DB) RewriteSnapshot(ctx context.Context) error {
 
 // resumeSnapshotFromFiles resumes a partially created snapshot by analyzing file sizes
 func (db *DB) resumeSnapshotFromFiles(ctx context.Context, snapshotDir string) error {
-	resumeInfo, err := AnalyzePartialSnapshot(snapshotDir)
-	if err != nil {
-		return fmt.Errorf("failed to analyze partial snapshot: %w", err)
-	}
-
-	db.logger.Info("resuming snapshot",
-		"written_nodes", resumeInfo.WrittenNodes,
-		"written_leaves", resumeInfo.WrittenLeaves,
-		"nodes_file_pos", resumeInfo.NodesFilePos,
-		"leaves_file_pos", resumeInfo.LeavesFilePos)
+	db.logger.Info("resuming multi-tree snapshot", "path", snapshotDir)
 
 	// Resume the snapshot creation for each tree
-	// For simplicity, we'll resume each tree individually
-	// In a more sophisticated implementation, we could track per-tree progress
+	// Check for COMPLETED marker files to skip already completed trees
 	for _, entry := range db.MultiTree.trees {
 		tree, name := entry.Tree, entry.Name
 		treeDir := filepath.Join(snapshotDir, name)
 
+		// Check if this tree is already completed
+		if isTreeCompleted(treeDir) {
+			db.logger.Info("tree already completed, skipping", "tree", name)
+			continue
+		}
+
+		db.logger.Info("resuming tree snapshot", "tree", name)
 		if err := tree.WriteSnapshotResumableFromFiles(ctx, treeDir); err != nil {
 			return fmt.Errorf("failed to resume tree %s: %w", name, err)
 		}
@@ -640,8 +685,18 @@ func (db *DB) reloadMultiTree(mtree *MultiTree) error {
 }
 
 // rewriteIfApplicable execute the snapshot rewrite strategy according to current height
+// or when resumable snapshots are detected
 func (db *DB) rewriteIfApplicable(height int64) {
-	if height%int64(db.snapshotInterval) != 0 {
+	// If a background rewrite is already in progress, do not trigger another
+	if db.snapshotRewriteChan != nil {
+		return
+	}
+	// Check if it's time for regular snapshot based on interval
+	if height%int64(db.snapshotInterval) == 0 {
+		db.logger.Info("triggering snapshot rewrite due to interval", "height", height, "interval", db.snapshotInterval)
+	} else if db.hasResumableSnapshots() {
+		db.logger.Info("triggering snapshot rewrite due to resumable snapshots detected", "height", height)
+	} else {
 		return
 	}
 
