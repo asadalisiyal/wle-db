@@ -218,30 +218,26 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 }
 
 // CleanupTmpDirs removes temporary directories, preserving only recent resumable ones
-func CleanupTmpDirs(rootDir string, logger logger.Logger) error {
-	entries, err := os.ReadDir(rootDir)
+func CleanupTmpDirs(dbDir string, logger logger.Logger) error {
+	// If there exists any -tmp directory, preserve all of them to allow resume later
+	if hasResumableSnapshotsInDir(dbDir) {
+		logger.Info("detected resumable temporary snapshot directory")
+		return nil
+	}
+
+	// Otherwise, clean up any stray -tmp directories
+	entries, err := os.ReadDir(dbDir)
 	if err != nil {
 		return err
 	}
-
 	for _, entry := range entries {
 		if !entry.IsDir() || !strings.HasSuffix(entry.Name(), "-tmp") {
 			continue
 		}
-
-		snapshotDir := filepath.Join(rootDir, entry.Name())
-
-		// Check if this snapshot is resumable
-		if isSnapshotResumable(snapshotDir) {
-			logger.Info("preserving resumable snapshot", "path", snapshotDir)
-			continue
-		}
-
-		// Remove non-resumable temporary directories
-		logger.Info("removing non-resumable temporary snapshot", "path", snapshotDir)
-		if err := os.RemoveAll(snapshotDir); err != nil {
-			logger.Error("failed to remove non-resumable temporary snapshot",
-				"path", snapshotDir, "error", err)
+		dir := filepath.Join(dbDir, entry.Name())
+		logger.Info("removing temporary snapshot directory", "path", dir)
+		if err := os.RemoveAll(dir); err != nil {
+			logger.Error("failed to remove temporary snapshot directory", "path", dir, "error", err)
 			return err
 		}
 	}
@@ -249,48 +245,23 @@ func CleanupTmpDirs(rootDir string, logger logger.Logger) error {
 	return nil
 }
 
-// isSnapshotResumable checks if a snapshot directory contains resumable snapshot data
-func isSnapshotResumable(snapshotDir string) bool {
-	entries, err := os.ReadDir(snapshotDir)
+// hasResumableSnapshotsInDir is a standalone variant used before DB is constructed
+func hasResumableSnapshotsInDir(dbDir string) bool {
+	entries, err := os.ReadDir(dbDir)
 	if err != nil {
 		return false
 	}
-
-	// Check for snapshot files (kvs, leaves, nodes) in the directory or subdirectories
 	for _, entry := range entries {
-		name := entry.Name()
-		// Check for main snapshot files
-		if name == FileNameNodes || name == FileNameLeaves || name == FileNameKVs {
+		if entry.IsDir() && strings.HasSuffix(entry.Name(), "-tmp") {
 			return true
 		}
-		// Check for tree subdirectories (for multi-tree snapshots)
-		if entry.IsDir() {
-			treeDir := filepath.Join(snapshotDir, name)
-			if hasSnapshotDataFiles(treeDir) {
-				return true
-			}
-		}
 	}
-
 	return false
 }
+
 
 // hasSnapshotDataFiles checks if a directory contains snapshot data files
-func hasSnapshotDataFiles(dir string) bool {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-
-	for _, entry := range entries {
-		name := entry.Name()
-		if name == FileNameNodes || name == FileNameLeaves || name == FileNameKVs {
-			return true
-		}
-	}
-
-	return false
-}
+// (helper removed; inlined to avoid unused warning)
 
 // isTreeCompleted checks if a tree snapshot is marked as completed
 func isTreeCompleted(treeDir string) bool {
