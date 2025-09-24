@@ -259,7 +259,6 @@ func hasResumableSnapshotsInDir(dbDir string) bool {
 	return false
 }
 
-
 // hasSnapshotDataFiles checks if a directory contains snapshot data files
 // (helper removed; inlined to avoid unused warning)
 
@@ -582,12 +581,22 @@ func (db *DB) RewriteSnapshot(ctx context.Context) error {
 
 			// Create fresh snapshot
 			if err := db.MultiTree.WriteSnapshot(ctx, path, db.snapshotWriterPool); err != nil {
+				// Don't remove temp directory if context was cancelled (e.g., during shutdown)
+				// The buffers have been flushed, so partial data is preserved for resumption
+				if ctx.Err() != nil {
+					return err
+				}
 				return errorutils.Join(err, os.RemoveAll(path))
 			}
 		}
 	} else {
 		db.logger.Info("no resumable snapshot found, creating fresh snapshot", "path", path)
 		if err := db.MultiTree.WriteSnapshot(ctx, path, db.snapshotWriterPool); err != nil {
+			// Don't remove temp directory if context was cancelled (e.g., during shutdown)
+			// The buffers have been flushed, so partial data is preserved for resumption
+			if ctx.Err() != nil {
+				return err
+			}
 			return errorutils.Join(err, os.RemoveAll(path))
 		}
 	}
@@ -602,8 +611,10 @@ func (db *DB) RewriteSnapshot(ctx context.Context) error {
 func (db *DB) resumeSnapshotFromFiles(ctx context.Context, snapshotDir string) error {
 	db.logger.Info("resuming multi-tree snapshot", "path", snapshotDir)
 
-	// Resume the snapshot creation for each tree
+	// Resume the snapshot creation for each tree in parallel (matching original behavior)
 	// Check for COMPLETED marker files to skip already completed trees
+	group, _ := db.snapshotWriterPool.GroupContext(ctx)
+
 	for _, entry := range db.MultiTree.trees {
 		tree, name := entry.Tree, entry.Name
 		treeDir := filepath.Join(snapshotDir, name)
@@ -615,9 +626,14 @@ func (db *DB) resumeSnapshotFromFiles(ctx context.Context, snapshotDir string) e
 		}
 
 		db.logger.Info("resuming tree snapshot", "tree", name)
-		if err := tree.WriteSnapshotResumableFromFiles(ctx, treeDir); err != nil {
-			return fmt.Errorf("failed to resume tree %s: %w", name, err)
-		}
+		group.Submit(func() error {
+			return tree.WriteSnapshotResumableFromFiles(ctx, treeDir)
+		})
+	}
+
+	// Wait for all resume operations to complete
+	if err := group.Wait(); err != nil {
+		return err
 	}
 
 	// Write commit info
