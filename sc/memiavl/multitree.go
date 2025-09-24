@@ -349,12 +349,10 @@ func (t *MultiTree) Catchup(stream types.Stream[proto.ChangelogEntry], endVersio
 	if targetVersion == 0 {
 		targetVersion = utils.IndexToVersion(endIndex, t.initialVersion)
 	}
-	t.logger.Info("starting catchup",
+	t.logger.Info("MemIAVL catchup replay",
 		"from_version", currentVersion,
 		"to_version", targetVersion,
-		"from_index", firstIndex,
-		"to_index", endIndex,
-		"entries_to_replay", endIndex-firstIndex+1)
+		"total_entries", endIndex-firstIndex+1)
 
 	var replayCount = 0
 	totalEntries := endIndex - firstIndex + 1
@@ -381,10 +379,10 @@ func (t *MultiTree) Catchup(stream types.Stream[proto.ChangelogEntry], endVersio
 		if replayCount%1000 == 0 || replayCount == int(totalEntries) {
 			progressPercent := float64(replayCount) / float64(totalEntries) * 100
 			currentVersion := utils.IndexToVersion(index, t.initialVersion)
-			t.logger.Info("catchup progress",
+			t.logger.Info("replay progress",
 				"replayed_entries", replayCount,
 				"total_entries", totalEntries,
-				"progress_percent", fmt.Sprintf("%.1f%%", progressPercent),
+				"progress", fmt.Sprintf("%.1f%%", progressPercent),
 				"current_version", currentVersion)
 		}
 		return nil

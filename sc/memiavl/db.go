@@ -210,8 +210,10 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 			return nil, errorutils.Join(err, db.Close())
 		}
 	}
-	if db.streamHandler == nil {
-		fmt.Println("[Debug] DB steam handler is nil??")
+
+	// prune old snapshots during startup (asynchronous to avoid blocking startup)
+	if !db.readOnly {
+		db.pruneSnapshots()
 	}
 
 	return db, nil
@@ -490,7 +492,6 @@ func (db *DB) checkBackgroundSnapshotRewrite() error {
 			return fmt.Errorf("switch multitree failed: %w", err)
 		}
 		db.logger.Info("switched to new memiavl snapshot", "version", db.MultiTree.Version())
-
 		db.pruneSnapshots()
 	default:
 	}
@@ -506,16 +507,23 @@ func (db *DB) pruneSnapshots() {
 	go func() {
 		defer db.pruneSnapshotLock.Unlock()
 
+		// Get current snapshot version
 		currentVersion, err := currentVersion(db.dir)
 		if err != nil {
-			db.logger.Error("failed to read current snapshot version", "err", err)
+			db.logger.Error("failed to get current snapshot version", "err", err)
 			return
 		}
 
+		db.logger.Info("pruning old snapshots",
+			"current_version", currentVersion,
+			"keep_recent", db.snapshotKeepRecent)
+
 		counter := db.snapshotKeepRecent
+		var prunedCount int
+
 		if err := traverseSnapshots(db.dir, false, func(version int64) (bool, error) {
 			if version >= currentVersion {
-				// ignore any newer snapshot directories, there could be ongoning snapshot rewrite.
+				// ignore current and any newer snapshot directories
 				return false, nil
 			}
 
@@ -525,16 +533,22 @@ func (db *DB) pruneSnapshots() {
 			}
 
 			name := snapshotName(version)
-			db.logger.Info("prune snapshot", "name", name)
+			db.logger.Info("prune snapshot", "name", name, "version", version)
 
 			if err := atomicRemoveDir(filepath.Join(db.dir, name)); err != nil {
-				db.logger.Error("failed to prune snapshot", "err", err)
+				db.logger.Error("failed to prune snapshot", "name", name, "error", err)
+				return false, err // Continue with other snapshots even if one fails
 			}
 
+			prunedCount++
 			return false, nil
 		}); err != nil {
-			db.logger.Error("fail to prune snapshots", "err", err)
+			db.logger.Error("failed to traverse snapshots during pruning", "err", err)
 			return
+		}
+
+		if prunedCount > 0 {
+			db.logger.Info("pruned old snapshots", "count", prunedCount)
 		}
 
 		// truncate Rlog until the earliest remaining snapshot
