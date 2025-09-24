@@ -776,13 +776,6 @@ func (db *DB) Close() error {
 	defer db.mtx.Unlock()
 	errs := []error{}
 
-	// Close stream handler
-	if db.streamHandler != nil {
-		err := db.streamHandler.Close()
-		errs = append(errs, err)
-		db.streamHandler = nil
-	}
-
 	// Close rewrite channel
 	if db.snapshotRewriteChan != nil {
 		db.snapshotRewriteCancelFunc()
@@ -790,6 +783,13 @@ func (db *DB) Close() error {
 		db.snapshotRewriteChan = nil
 		db.snapshotRewriteCancelFunc = nil
 	}
+
+    // Close stream handler AFTER background rewrite has stopped
+    if db.streamHandler != nil {
+        err := db.streamHandler.Close()
+        errs = append(errs, err)
+        db.streamHandler = nil
+    }
 
 	errs = append(errs, db.MultiTree.Close())
 
