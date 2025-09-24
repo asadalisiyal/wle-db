@@ -725,6 +725,7 @@ func (db *DB) rewriteSnapshotBackground(height int64) error {
 		resumeSnapshot = true
 		opts := db.opts
 		opts.ReadOnly = true
+		opts.CreateIfMissing = false
 		fmt.Printf("[Debug] Opening DB for resume snapshot height %d\n", height)
 		db, err := OpenDB(db.logger, height, opts)
 		if err != nil {
