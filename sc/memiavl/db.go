@@ -725,8 +725,13 @@ func (db *DB) rewriteSnapshotBackground(height int64) error {
 		resumeSnapshot = true
 		opts := db.opts
 		opts.ReadOnly = true
-		fmt.Printf("[Debug] Opening DB for height %d\n", height)
-		dbCloned, _ = OpenDB(db.logger, height, opts)
+		fmt.Printf("[Debug] Opening DB for resume snapshot height %d\n", height)
+		db, err := OpenDB(db.logger, height, opts)
+		if err != nil {
+			fmt.Printf("[Debug] Failed openning db for snapshot due to %v\n", err)
+			return err
+		}
+		dbCloned = db
 	}
 	go func() {
 		defer close(ch)
