@@ -484,6 +484,16 @@ func writeSnapshotWithOptions(
 
 	leaves, err := doWrite(w)
 	if err != nil {
+		// Preserve partial progress on cancellation by flushing and syncing buffers
+		if err == ctx.Err() {
+			_ = nodesWriter.Flush()
+			_ = leavesWriter.Flush()
+			_ = kvsWriter.Flush()
+
+			_ = fpKVs.Sync()
+			_ = fpLeaves.Sync()
+			_ = fpNodes.Sync()
+		}
 		return err
 	}
 
