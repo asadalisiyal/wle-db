@@ -712,6 +712,7 @@ func (db *DB) rewriteSnapshotBackground(height int64) error {
 	if db.snapshotRewriteChan != nil {
 		return errors.New("there's another ongoing snapshot rewriting process")
 	}
+	fmt.Printf("[Debug] rewriteSnapshotBackground for height %d\n", height)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan snapshotResult)
@@ -724,6 +725,7 @@ func (db *DB) rewriteSnapshotBackground(height int64) error {
 		resumeSnapshot = true
 		opts := db.opts
 		opts.ReadOnly = true
+		fmt.Printf("[Debug] Opening DB for height %d\n", height)
 		dbCloned, _ = OpenDB(db.logger, height, opts)
 	}
 	go func() {
