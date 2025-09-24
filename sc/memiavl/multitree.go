@@ -11,6 +11,7 @@ import (
 	"github.com/alitto/pond"
 	"github.com/cosmos/iavl"
 	"github.com/sei-protocol/sei-db/common/errors"
+	"github.com/sei-protocol/sei-db/common/logger"
 	"github.com/sei-protocol/sei-db/common/utils"
 	"github.com/sei-protocol/sei-db/proto"
 	"github.com/sei-protocol/sei-db/stream/types"
@@ -46,6 +47,7 @@ type MultiTree struct {
 
 	zeroCopy  bool
 	cacheSize int
+	logger    logger.Logger
 
 	trees          []NamedTree    // always ordered by tree name
 	treesByName    map[string]int // index of the trees by name
@@ -55,16 +57,17 @@ type MultiTree struct {
 	metadata proto.MultiTreeMetadata
 }
 
-func NewEmptyMultiTree(initialVersion uint32, cacheSize int) *MultiTree {
+func NewEmptyMultiTree(initialVersion uint32, cacheSize int, logger logger.Logger) *MultiTree {
 	return &MultiTree{
 		initialVersion: initialVersion,
 		treesByName:    make(map[string]int),
 		zeroCopy:       true,
 		cacheSize:      cacheSize,
+		logger:         logger,
 	}
 }
 
-func LoadMultiTree(dir string, zeroCopy bool, cacheSize int) (*MultiTree, error) {
+func LoadMultiTree(dir string, zeroCopy bool, cacheSize int, logger logger.Logger) (*MultiTree, error) {
 	metadata, err := readMetadata(dir)
 	if err != nil {
 		return nil, err
@@ -107,6 +110,7 @@ func LoadMultiTree(dir string, zeroCopy bool, cacheSize int) (*MultiTree, error)
 		metadata:       *metadata,
 		zeroCopy:       zeroCopy,
 		cacheSize:      cacheSize,
+		logger:         logger,
 	}
 	// initial version is necessary for rlog index conversion
 	mtree.setInitialVersion(metadata.InitialVersion)
@@ -339,7 +343,21 @@ func (t *MultiTree) Catchup(stream types.Stream[proto.ChangelogEntry], endVersio
 		return fmt.Errorf("target index %d is in the future, latest index: %d", endIndex, lastIndex)
 	}
 
+	// Log catchup start information
+	currentVersion := t.Version()
+	targetVersion := endVersion
+	if targetVersion == 0 {
+		targetVersion = utils.IndexToVersion(endIndex, t.initialVersion)
+	}
+	t.logger.Info("starting catchup",
+		"from_version", currentVersion,
+		"to_version", targetVersion,
+		"from_index", firstIndex,
+		"to_index", endIndex,
+		"entries_to_replay", endIndex-firstIndex+1)
+
 	var replayCount = 0
+	totalEntries := endIndex - firstIndex + 1
 	err = stream.Replay(firstIndex, endIndex, func(index uint64, entry proto.ChangelogEntry) error {
 		if err := t.ApplyUpgrades(entry.Upgrades); err != nil {
 			return err
@@ -358,8 +376,16 @@ func (t *MultiTree) Catchup(stream types.Stream[proto.ChangelogEntry], endVersio
 		t.lastCommitInfo.Version = utils.NextVersion(t.lastCommitInfo.Version, t.initialVersion)
 		t.lastCommitInfo.StoreInfos = []proto.StoreInfo{}
 		replayCount++
-		if replayCount%1000 == 0 {
-			fmt.Printf("Replayed %d changelog entries\n", replayCount)
+
+		// Log progress every 1000 entries or at completion
+		if replayCount%1000 == 0 || replayCount == int(totalEntries) {
+			progressPercent := float64(replayCount) / float64(totalEntries) * 100
+			currentVersion := utils.IndexToVersion(index, t.initialVersion)
+			t.logger.Info("catchup progress",
+				"replayed_entries", replayCount,
+				"total_entries", totalEntries,
+				"progress_percent", fmt.Sprintf("%.1f%%", progressPercent),
+				"current_version", currentVersion)
 		}
 		return nil
 	})
@@ -372,6 +398,13 @@ func (t *MultiTree) Catchup(stream types.Stream[proto.ChangelogEntry], endVersio
 		return err
 	}
 	t.UpdateCommitInfo()
+
+	// Log catchup completion
+	finalVersion := t.Version()
+	t.logger.Info("catchup completed",
+		"final_version", finalVersion,
+		"total_replayed", replayCount)
+
 	return nil
 }
 

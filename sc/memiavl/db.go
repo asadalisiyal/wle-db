@@ -96,7 +96,7 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 	opts.FillDefaults()
 
 	if opts.CreateIfMissing {
-		if err := createDBIfNotExist(opts.Dir, opts.InitialVersion); err != nil {
+		if err := createDBIfNotExist(opts.Dir, opts.InitialVersion, logger); err != nil {
 			return nil, fmt.Errorf("fail to load db: %w", err)
 		}
 	}
@@ -125,7 +125,7 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 	}
 
 	path := filepath.Join(opts.Dir, snapshot)
-	mtree, err := LoadMultiTree(path, opts.ZeroCopy, opts.CacheSize)
+	mtree, err := LoadMultiTree(path, opts.ZeroCopy, opts.CacheSize, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -217,50 +217,93 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 	return db, nil
 }
 
-// CleanupTmpDirs removes temporary directories, preserving only recent resumable ones
+// CleanupTmpDirs removes temporary directories, ensuring only one valid resumable snapshot exists
 func CleanupTmpDirs(dbDir string, logger logger.Logger) error {
-	// If there exists any -tmp directory, preserve all of them to allow resume later
-	if hasResumableSnapshotsInDir(dbDir) {
-		logger.Info("detected resumable temporary snapshot directory")
-		return nil
-	}
-
-	// Otherwise, clean up any stray -tmp directories
 	entries, err := os.ReadDir(dbDir)
 	if err != nil {
 		return err
 	}
+
+	var validTmpDirs []tmpDirInfo
+	var invalidTmpDirs []string
+
+	// Find all temp directories and categorize them
 	for _, entry := range entries {
 		if !entry.IsDir() || !strings.HasSuffix(entry.Name(), "-tmp") {
 			continue
 		}
-		dir := filepath.Join(dbDir, entry.Name())
-		logger.Info("removing temporary snapshot directory", "path", dir)
-		if err := os.RemoveAll(dir); err != nil {
-			logger.Error("failed to remove temporary snapshot directory", "path", dir, "error", err)
+
+		tmpPath := filepath.Join(dbDir, entry.Name())
+
+		// Check if this temp directory contains valid resumable snapshot data
+		if IsResumableSnapshot(tmpPath) {
+			// Extract version from temp directory name (e.g., "snapshot-00000000000169630107-tmp")
+			version, err := parseVersionFromTmpDir(entry.Name())
+			if err != nil {
+				logger.Error("invalid temp directory name, removing", "path", tmpPath, "error", err)
+				invalidTmpDirs = append(invalidTmpDirs, tmpPath)
+			} else {
+				validTmpDirs = append(validTmpDirs, tmpDirInfo{
+					path:    tmpPath,
+					version: version,
+				})
+			}
+		} else {
+			// Invalid temp directory (no resumable data)
+			invalidTmpDirs = append(invalidTmpDirs, tmpPath)
+		}
+	}
+
+	// Remove invalid temp directories
+	for _, tmpPath := range invalidTmpDirs {
+		logger.Info("removing invalid temporary snapshot directory", "path", tmpPath)
+		if err := os.RemoveAll(tmpPath); err != nil {
+			logger.Error("failed to remove invalid temporary snapshot directory", "path", tmpPath, "error", err)
 			return err
 		}
+	}
+
+	// If we have multiple valid temp directories, keep only the newest one
+	if len(validTmpDirs) > 1 {
+		// Sort by version (newest first)
+		sort.Slice(validTmpDirs, func(i, j int) bool {
+			return validTmpDirs[i].version > validTmpDirs[j].version
+		})
+
+		// Keep the newest one, remove the rest
+		newest := validTmpDirs[0]
+		logger.Info("keeping newest resumable snapshot", "path", newest.path, "version", newest.version)
+
+		for i := 1; i < len(validTmpDirs); i++ {
+			oldTmpPath := validTmpDirs[i].path
+			logger.Info("removing older resumable snapshot", "path", oldTmpPath, "version", validTmpDirs[i].version)
+			if err := os.RemoveAll(oldTmpPath); err != nil {
+				logger.Error("failed to remove older resumable snapshot", "path", oldTmpPath, "error", err)
+				return err
+			}
+		}
+	} else if len(validTmpDirs) == 1 {
+		logger.Info("detected resumable temporary snapshot directory", "path", validTmpDirs[0].path, "version", validTmpDirs[0].version)
 	}
 
 	return nil
 }
 
-// hasResumableSnapshotsInDir is a standalone variant used before DB is constructed
-func hasResumableSnapshotsInDir(dbDir string) bool {
-	entries, err := os.ReadDir(dbDir)
-	if err != nil {
-		return false
+type tmpDirInfo struct {
+	path    string
+	version int64
+}
+
+// parseVersionFromTmpDir extracts version from temp directory name
+// e.g., "snapshot-00000000000169630107-tmp" -> 169630107
+func parseVersionFromTmpDir(tmpDirName string) (int64, error) {
+	if !strings.HasSuffix(tmpDirName, "-tmp") {
+		return 0, fmt.Errorf("not a temp directory name: %s", tmpDirName)
 	}
-	for _, entry := range entries {
-		if entry.IsDir() && strings.HasSuffix(entry.Name(), "-tmp") {
-			tmpPath := filepath.Join(dbDir, entry.Name())
-			// Check if this temp directory actually contains resumable snapshot data
-			if IsResumableSnapshot(tmpPath) {
-				return true
-			}
-		}
-	}
-	return false
+
+	// Remove "-tmp" suffix
+	snapshotName := tmpDirName[:len(tmpDirName)-4]
+	return parseVersion(snapshotName)
 }
 
 // hasSnapshotDataFiles checks if a directory contains snapshot data files
@@ -317,7 +360,7 @@ func (db *DB) SetInitialVersion(initialVersion int64) error {
 		return err
 	}
 
-	return initEmptyDB(db.dir, db.initialVersion)
+	return initEmptyDB(db.dir, db.initialVersion, db.logger)
 }
 
 // ApplyUpgrades wraps MultiTree.ApplyUpgrades, it also appends the upgrades in a pending log,
@@ -668,7 +711,7 @@ func (db *DB) Reload() error {
 }
 
 func (db *DB) reload() error {
-	mtree, err := LoadMultiTree(currentPath(db.dir), db.zeroCopy, db.cacheSize)
+	mtree, err := LoadMultiTree(currentPath(db.dir), db.zeroCopy, db.cacheSize, db.logger)
 	if err != nil {
 		return err
 	}
@@ -742,7 +785,7 @@ func (db *DB) rewriteSnapshotBackground() error {
 			return
 		}
 		cloned.logger.Info("finished rewriting snapshot", "version", cloned.Version())
-		mtree, err := LoadMultiTree(currentPath(cloned.dir), cloned.zeroCopy, 0)
+		mtree, err := LoadMultiTree(currentPath(cloned.dir), cloned.zeroCopy, 0, cloned.logger)
 		if err != nil {
 			ch <- snapshotResult{err: err}
 			return
@@ -952,8 +995,8 @@ func GetEarliestVersion(root string) (int64, error) {
 //
 // current -> snapshot-0
 // ```
-func initEmptyDB(dir string, initialVersion uint32) error {
-	tmp := NewEmptyMultiTree(initialVersion, 0)
+func initEmptyDB(dir string, initialVersion uint32, logger logger.Logger) error {
+	tmp := NewEmptyMultiTree(initialVersion, 0, logger)
 	snapshotDir := snapshotName(0)
 	// create tmp worker pool
 	pool := pond.New(config.DefaultSnapshotWriterLimit, config.DefaultSnapshotWriterLimit*10)
@@ -1026,10 +1069,10 @@ func atomicRemoveDir(path string) error {
 }
 
 // createDBIfNotExist detects if db does not exist and try to initialize an empty one.
-func createDBIfNotExist(dir string, initialVersion uint32) error {
+func createDBIfNotExist(dir string, initialVersion uint32, logger logger.Logger) error {
 	_, err := os.Stat(filepath.Join(dir, "current", MetadataFileName))
 	if err != nil && os.IsNotExist(err) {
-		return initEmptyDB(dir, initialVersion)
+		return initEmptyDB(dir, initialVersion, logger)
 	}
 	return nil
 }
