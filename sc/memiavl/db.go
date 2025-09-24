@@ -721,29 +721,29 @@ func (db *DB) rewriteSnapshotBackground(height int64) error {
 
 	var dbCloned = db.copy(0)
 	if height != db.Version() {
+		resumeSnapshot = true
 		opts := db.opts
 		opts.ReadOnly = true
 		dbCloned, _ = OpenDB(db.logger, height, opts)
 	}
 	go func() {
 		defer close(ch)
-
 		if resumeSnapshot {
-			dbCloned.logger.Info("resume previous snapshot creation", "version", height)
+			db.logger.Info("resume previous snapshot creation", "version", height)
 			snapshotDir := filepath.Join(dbCloned.dir, filepath.Join(snapshotName(height), "-tmp"))
 			if err := dbCloned.ResumeSnapshotFromFiles(ctx, snapshotDir); err != nil {
 				ch <- snapshotResult{err: err}
 				return
 			}
 		} else {
-			dbCloned.logger.Info("start rewriting snapshot", "version", height)
+			db.logger.Info("start rewriting snapshot", "version", height)
 			if err := dbCloned.RewriteSnapshot(ctx); err != nil {
 				ch <- snapshotResult{err: err}
 				return
 			}
 		}
 
-		dbCloned.logger.Info("finished rewriting snapshot", "version", height)
+		db.logger.Info("finished rewriting snapshot", "version", height)
 		mtree, err := LoadMultiTree(currentPath(dbCloned.dir), dbCloned.zeroCopy, 0, dbCloned.logger)
 		if err != nil {
 			ch <- snapshotResult{err: err}
@@ -755,7 +755,7 @@ func (db *DB) rewriteSnapshotBackground(height int64) error {
 			ch <- snapshotResult{err: err}
 			return
 		}
-		dbCloned.logger.Info("finished snapshot best-effort catchup", "version", dbCloned.Version(), "latest", mtree.Version())
+		db.logger.Info("finished snapshot best-effort catchup", "version", dbCloned.Version(), "latest", mtree.Version())
 
 		ch <- snapshotResult{mtree: mtree}
 	}()

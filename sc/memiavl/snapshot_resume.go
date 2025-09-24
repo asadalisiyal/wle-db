@@ -111,7 +111,7 @@ func hasResumableSnapshots(dbDir string) (bool, string) {
 
 	for _, entry := range entries {
 		if entry.IsDir() && strings.HasSuffix(entry.Name(), "-tmp") {
-			entry.Name()
+			return true, entry.Name()
 		}
 	}
 
