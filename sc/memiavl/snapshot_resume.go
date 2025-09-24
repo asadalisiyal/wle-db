@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 // AnalyzePartialSnapshot analyzes a partial snapshot directory to determine resume information
@@ -72,7 +74,13 @@ func AnalyzePartialSnapshot(snapshotDir string) (*SnapshotResumeInfo, error) {
 // IsResumableSnapshot checks if a snapshot directory can be resumed
 // It handles both single-tree and multi-tree snapshots
 func IsResumableSnapshot(snapshotDir string) bool {
-	// Check if there are any tree subdirectories with resumable data
+	// First try single-tree snapshot format (files in root directory)
+	_, err := AnalyzePartialSnapshot(snapshotDir)
+	if err == nil {
+		return true
+	}
+
+	// If that fails, try multi-tree snapshot format (files in tree subdirectories)
 	entries, err := os.ReadDir(snapshotDir)
 	if err != nil {
 		return false
@@ -87,21 +95,67 @@ func IsResumableSnapshot(snapshotDir string) bool {
 		treeDir := filepath.Join(snapshotDir, entry.Name())
 		if _, err := AnalyzePartialSnapshot(treeDir); err == nil {
 			return true
-		} else {
-			fmt.Printf("AnalyzePartialSnapshot failed with error %v\n", err)
 		}
-
 	}
 
 	return false
+}
+
+// hasResumableSnapshots checks if there are any resumable snapshots in the database directory
+// Returns true and the snapshot directory path if found, false and empty string if not found
+func hasResumableSnapshots(dbDir string) (bool, string) {
+	entries, err := os.ReadDir(dbDir)
+	if err != nil {
+		return false, ""
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasSuffix(entry.Name(), "-tmp") {
+			entry.Name()
+		}
+	}
+
+	return false, ""
+}
+
+// IsSnapshotCompleted checks if a tree snapshot is marked as completed
+func IsSnapshotCompleted(treeDir string) bool {
+	completedFile := filepath.Join(treeDir, FileNameCompleted)
+	_, err := os.Stat(completedFile)
+	return err == nil
+}
+
+// ParseVersionFromTmpDir extracts version from temp directory name
+// e.g., "snapshot-00000000000169630107-tmp" -> 169630107
+func ParseVersionFromTmpDir(tmpDirName string) (int64, error) {
+	if !strings.HasSuffix(tmpDirName, "-tmp") {
+		return 0, fmt.Errorf("not a temp directory name: %s", tmpDirName)
+	}
+
+	// Remove "-tmp" suffix
+	snapshotName := tmpDirName[:len(tmpDirName)-4]
+	return parseVersion(snapshotName)
+}
+
+func parseVersion(name string) (int64, error) {
+	if !isSnapshotName(name) {
+		return 0, fmt.Errorf("invalid snapshot name %s", name)
+	}
+
+	v, err := strconv.ParseUint(name[len(SnapshotPrefix):], 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("snapshot version overflows: %d", err)
+	}
+
+	return int64(v), nil
 }
 
 // WriteSnapshotResumableFromFiles writes a snapshot with resume capability based on file analysis
 func (t *Tree) WriteSnapshotResumableFromFiles(ctx context.Context, treeDir string) error {
 	resumeInfo, err := AnalyzePartialSnapshot(treeDir)
 	if err != nil {
-		// If we can't analyze the partial snapshot, start fresh
-		return t.WriteSnapshot(ctx, treeDir)
+		// If we can't analyze the partial snapshot
+		return err
 	}
 
 	opts := &SnapshotWriteOptions{

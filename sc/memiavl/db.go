@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +48,7 @@ type DB struct {
 	logger   logger.Logger
 	fileLock FileLock
 	readOnly bool
+	opts     Options
 
 	// result channel of snapshot rewrite goroutine
 	snapshotRewriteChan chan snapshotResult
@@ -191,6 +191,7 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 		MultiTree:          *mtree,
 		logger:             logger,
 		dir:                opts.Dir,
+		opts:               opts,
 		fileLock:           fileLock,
 		readOnly:           opts.ReadOnly,
 		streamHandler:      streamHandler,
@@ -218,7 +219,6 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 	return db, nil
 }
 
-
 // CleanupTmpDirs preserves all temporary directories - any -tmp folder is considered valid
 func CleanupTmpDirs(dbDir string, logger logger.Logger) error {
 	entries, err := os.ReadDir(dbDir)
@@ -237,7 +237,7 @@ func CleanupTmpDirs(dbDir string, logger logger.Logger) error {
 		tmpPath := filepath.Join(dbDir, entry.Name())
 
 		// Extract version from temp directory name (e.g., "snapshot-00000000000169630107-tmp")
-		version, err := parseVersionFromTmpDir(entry.Name())
+		version, err := ParseVersionFromTmpDir(entry.Name())
 		if err != nil {
 			logger.Error("invalid temp directory name, removing", "path", tmpPath, "error", err)
 			if err := os.RemoveAll(tmpPath); err != nil {
@@ -282,44 +282,6 @@ func CleanupTmpDirs(dbDir string, logger logger.Logger) error {
 type tmpDirInfo struct {
 	path    string
 	version int64
-}
-
-// parseVersionFromTmpDir extracts version from temp directory name
-// e.g., "snapshot-00000000000169630107-tmp" -> 169630107
-func parseVersionFromTmpDir(tmpDirName string) (int64, error) {
-	if !strings.HasSuffix(tmpDirName, "-tmp") {
-		return 0, fmt.Errorf("not a temp directory name: %s", tmpDirName)
-	}
-
-	// Remove "-tmp" suffix
-	snapshotName := tmpDirName[:len(tmpDirName)-4]
-	return parseVersion(snapshotName)
-}
-
-// hasSnapshotDataFiles checks if a directory contains snapshot data files
-// (helper removed; inlined to avoid unused warning)
-
-// isTreeCompleted checks if a tree snapshot is marked as completed
-func isTreeCompleted(treeDir string) bool {
-	completedFile := filepath.Join(treeDir, FileNameCompleted)
-	_, err := os.Stat(completedFile)
-	return err == nil
-}
-
-// hasResumableSnapshots checks if there are any resumable snapshots in the database directory
-func (db *DB) hasResumableSnapshots() bool {
-	entries, err := os.ReadDir(db.dir)
-	if err != nil {
-		return false
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() && strings.HasSuffix(entry.Name(), "-tmp") {
-			return true
-		}
-	}
-
-	return false
 }
 
 // ReadOnly returns whether the DB is opened in read-only mode.
@@ -605,60 +567,36 @@ func (db *DB) RewriteSnapshot(ctx context.Context) error {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
-	if db.readOnly {
-		return errReadOnly
-	}
-
+	// Create fresh snapshot
 	snapshotDir := snapshotName(db.lastCommitInfo.Version)
-	tmpDir := snapshotDir + "-tmp"
-	path := filepath.Join(db.dir, tmpDir)
+	tmpSnapshotPath := filepath.Join(db.dir, snapshotDir+"-tmp")
+	newSnapshotPath := filepath.Join(db.dir, snapshotDir)
 
-	// Check if there's a resumable snapshot
-	if IsResumableSnapshot(path) {
-		db.logger.Info("resuming snapshot creation", "path", path)
-		if err := db.resumeSnapshotFromFiles(ctx, path); err != nil {
-			db.logger.Error("failed to resume snapshot, falling back to fresh creation",
-				"path", path, "error", err)
-
-			// Remove the corrupted partial snapshot and start fresh
-			if removeErr := os.RemoveAll(path); removeErr != nil {
-				db.logger.Error("failed to remove corrupted partial snapshot",
-					"path", path, "error", removeErr)
-			} else {
-				db.logger.Info("removed corrupted partial snapshot", "path", path)
-			}
-
-			// Create fresh snapshot
-			if err := db.MultiTree.WriteSnapshot(ctx, path, db.snapshotWriterPool); err != nil {
-				// Don't remove temp directory if context was cancelled (e.g., during shutdown)
-				// The buffers have been flushed, so partial data is preserved for resumption
-				if ctx.Err() != nil {
-					return err
-				}
-				return errorutils.Join(err, os.RemoveAll(path))
-			}
+	db.logger.Info("Creating fresh snapshot", "path", tmpSnapshotPath)
+	if err := db.MultiTree.WriteSnapshot(ctx, tmpSnapshotPath, db.snapshotWriterPool); err != nil {
+		// Don't remove temp directory if context was cancelled (e.g., during shutdown)
+		// The buffers have been flushed, so partial data is preserved for resumption
+		if ctx.Err() != nil {
+			return err
 		}
-	} else {
-		db.logger.Info("no resumable snapshot found, creating fresh snapshot", "path", path)
-		if err := db.MultiTree.WriteSnapshot(ctx, path, db.snapshotWriterPool); err != nil {
-			// Don't remove temp directory if context was cancelled (e.g., during shutdown)
-			// The buffers have been flushed, so partial data is preserved for resumption
-			if ctx.Err() != nil {
-				return err
-			}
-			return errorutils.Join(err, os.RemoveAll(path))
-		}
+		return errorutils.Join(err, os.RemoveAll(tmpSnapshotPath))
 	}
 
-	if err := os.Rename(path, filepath.Join(db.dir, snapshotDir)); err != nil {
+	if err := os.Rename(tmpSnapshotPath, newSnapshotPath); err != nil {
 		return err
 	}
-	return updateCurrentSymlink(db.dir, snapshotDir)
+	return updateCurrentSymlink(db.dir, newSnapshotPath)
 }
 
-// resumeSnapshotFromFiles resumes a partially created snapshot by analyzing file sizes
-func (db *DB) resumeSnapshotFromFiles(ctx context.Context, snapshotDir string) error {
+// ResumeSnapshotFromFiles resumes a partially created snapshot
+func (db *DB) ResumeSnapshotFromFiles(ctx context.Context, snapshotDir string) error {
 	db.logger.Info("resuming multi-tree snapshot", "path", snapshotDir)
+
+	// Create newSnapshotPath by removing "-tmp" suffix from snapshotDir
+	if !strings.HasSuffix(snapshotDir, "-tmp") {
+		return fmt.Errorf("invalid snapshot directory name: %s", snapshotDir)
+	}
+	newSnapshotPath := snapshotDir[:len(snapshotDir)-4] // Remove "-tmp" suffix
 
 	// Resume the snapshot creation for each tree sequentially
 	// Check for COMPLETED marker files to skip already completed trees
@@ -674,7 +612,7 @@ func (db *DB) resumeSnapshotFromFiles(ctx context.Context, snapshotDir string) e
 		treeDir := filepath.Join(snapshotDir, name)
 
 		// Check if this tree is already completed
-		if isTreeCompleted(treeDir) {
+		if IsSnapshotCompleted(treeDir) {
 			db.logger.Info("tree already completed, skipping", "tree", name)
 			continue
 		}
@@ -698,7 +636,13 @@ func (db *DB) resumeSnapshotFromFiles(ctx context.Context, snapshotDir string) e
 	if err != nil {
 		return err
 	}
-	return WriteFileSync(filepath.Join(snapshotDir, MetadataFileName), bz)
+	if err := WriteFileSync(filepath.Join(snapshotDir, MetadataFileName), bz); err != nil {
+		return err
+	}
+	if err := os.Rename(snapshotDir, newSnapshotPath); err != nil {
+		return err
+	}
+	return updateCurrentSymlink(db.dir, newSnapshotPath)
 }
 
 func (db *DB) Reload() error {
@@ -731,16 +675,17 @@ func (db *DB) rewriteIfApplicable(height int64) {
 	if db.snapshotRewriteChan != nil {
 		return
 	}
+	targetHeight := height
 	// Check if it's time for regular snapshot based on interval
 	if height%int64(db.snapshotInterval) == 0 {
 		db.logger.Info("triggering snapshot rewrite due to interval", "height", height, "interval", db.snapshotInterval)
-	} else if db.hasResumableSnapshots() {
-		db.logger.Info("triggering snapshot rewrite due to resumable snapshots detected", "height", height)
+	} else if hasResumable, tmpDir := hasResumableSnapshots(db.dir); hasResumable {
+		db.logger.Info("detected resumable snapshot", "snapshotDir", tmpDir)
+		targetHeight, _ = ParseVersionFromTmpDir(tmpDir)
 	} else {
 		return
 	}
-
-	if err := db.rewriteSnapshotBackground(); err != nil {
+	if err := db.rewriteSnapshotBackground(targetHeight); err != nil {
 		db.logger.Error("failed to rewrite snapshot in background", "err", err)
 	}
 }
@@ -760,10 +705,10 @@ func (db *DB) RewriteSnapshotBackground() error {
 		return errReadOnly
 	}
 
-	return db.rewriteSnapshotBackground()
+	return db.rewriteSnapshotBackground(db.Version())
 }
 
-func (db *DB) rewriteSnapshotBackground() error {
+func (db *DB) rewriteSnapshotBackground(height int64) error {
 	if db.snapshotRewriteChan != nil {
 		return errors.New("there's another ongoing snapshot rewriting process")
 	}
@@ -772,18 +717,34 @@ func (db *DB) rewriteSnapshotBackground() error {
 	ch := make(chan snapshotResult)
 	db.snapshotRewriteChan = ch
 	db.snapshotRewriteCancelFunc = cancel
+	var resumeSnapshot = false
 
-	cloned := db.copy(0)
+	var dbCloned = db.copy(0)
+	if height != db.Version() {
+		opts := db.opts
+		opts.ReadOnly = true
+		dbCloned, _ = OpenDB(db.logger, height, opts)
+	}
 	go func() {
 		defer close(ch)
 
-		cloned.logger.Info("start rewriting snapshot", "version", cloned.Version())
-		if err := cloned.RewriteSnapshot(ctx); err != nil {
-			ch <- snapshotResult{err: err}
-			return
+		if resumeSnapshot {
+			dbCloned.logger.Info("resume previous snapshot creation", "version", height)
+			snapshotDir := filepath.Join(dbCloned.dir, filepath.Join(snapshotName(height), "-tmp"))
+			if err := dbCloned.ResumeSnapshotFromFiles(ctx, snapshotDir); err != nil {
+				ch <- snapshotResult{err: err}
+				return
+			}
+		} else {
+			dbCloned.logger.Info("start rewriting snapshot", "version", height)
+			if err := dbCloned.RewriteSnapshot(ctx); err != nil {
+				ch <- snapshotResult{err: err}
+				return
+			}
 		}
-		cloned.logger.Info("finished rewriting snapshot", "version", cloned.Version())
-		mtree, err := LoadMultiTree(currentPath(cloned.dir), cloned.zeroCopy, 0, cloned.logger)
+
+		dbCloned.logger.Info("finished rewriting snapshot", "version", height)
+		mtree, err := LoadMultiTree(currentPath(dbCloned.dir), dbCloned.zeroCopy, 0, dbCloned.logger)
 		if err != nil {
 			ch <- snapshotResult{err: err}
 			return
@@ -794,8 +755,7 @@ func (db *DB) rewriteSnapshotBackground() error {
 			ch <- snapshotResult{err: err}
 			return
 		}
-
-		cloned.logger.Info("finished best-effort catchup", "version", cloned.Version(), "latest", mtree.Version())
+		dbCloned.logger.Info("finished snapshot best-effort catchup", "version", dbCloned.Version(), "latest", mtree.Version())
 
 		ch <- snapshotResult{mtree: mtree}
 	}()
@@ -927,19 +887,6 @@ func currentVersion(root string) (int64, error) {
 	}
 
 	return version, nil
-}
-
-func parseVersion(name string) (int64, error) {
-	if !isSnapshotName(name) {
-		return 0, fmt.Errorf("invalid snapshot name %s", name)
-	}
-
-	v, err := strconv.ParseUint(name[len(SnapshotPrefix):], 10, 32)
-	if err != nil {
-		return 0, fmt.Errorf("snapshot version overflows: %d", err)
-	}
-
-	return int64(v), nil
 }
 
 // seekSnapshot find the biggest snapshot version that's smaller than or equal to the target version,
