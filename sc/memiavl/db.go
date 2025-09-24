@@ -253,7 +253,11 @@ func hasResumableSnapshotsInDir(dbDir string) bool {
 	}
 	for _, entry := range entries {
 		if entry.IsDir() && strings.HasSuffix(entry.Name(), "-tmp") {
-			return true
+			tmpPath := filepath.Join(dbDir, entry.Name())
+			// Check if this temp directory actually contains resumable snapshot data
+			if IsResumableSnapshot(tmpPath) {
+				return true
+			}
 		}
 	}
 	return false
@@ -278,7 +282,11 @@ func (db *DB) hasResumableSnapshots() bool {
 
 	for _, entry := range entries {
 		if entry.IsDir() && strings.HasSuffix(entry.Name(), "-tmp") {
-			return true
+			tmpPath := filepath.Join(db.dir, entry.Name())
+			// Check if this temp directory actually contains resumable snapshot data
+			if IsResumableSnapshot(tmpPath) {
+				return true
+			}
 		}
 	}
 
@@ -775,6 +783,12 @@ func (db *DB) Close() error {
 	}
 
 	errs = append(errs, db.MultiTree.Close())
+
+	// Stop worker pool
+	if db.snapshotWriterPool != nil {
+		db.snapshotWriterPool.StopAndWait()
+		db.snapshotWriterPool = nil
+	}
 
 	// Close file lock
 	if db.fileLock != nil {
