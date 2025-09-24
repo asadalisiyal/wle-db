@@ -87,7 +87,10 @@ func IsResumableSnapshot(snapshotDir string) bool {
 		treeDir := filepath.Join(snapshotDir, entry.Name())
 		if _, err := AnalyzePartialSnapshot(treeDir); err == nil {
 			return true
+		} else {
+			fmt.Printf("AnalyzePartialSnapshot failed with error %v\n", err)
 		}
+
 	}
 
 	return false
