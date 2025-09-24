@@ -72,24 +72,6 @@ func AnalyzePartialSnapshot(snapshotDir string) (*SnapshotResumeInfo, error) {
 // IsResumableSnapshot checks if a snapshot directory can be resumed
 // It handles both single-tree and multi-tree snapshots
 func IsResumableSnapshot(snapshotDir string) bool {
-	// First try single-tree snapshot format (files in root directory)
-	_, err := AnalyzePartialSnapshot(snapshotDir)
-	if err == nil {
-		return true
-	}
-
-	// If that fails, try multi-tree snapshot format (files in tree subdirectories)
-	return isMultiTreeResumableSnapshot(snapshotDir)
-}
-
-// isMultiTreeResumableSnapshot checks if a multi-tree snapshot directory can be resumed
-func isMultiTreeResumableSnapshot(snapshotDir string) bool {
-	// Check if metadata file exists (required for multi-tree snapshots)
-	metadataFile := filepath.Join(snapshotDir, MetadataFileName)
-	if _, err := os.Stat(metadataFile); err != nil {
-		return false
-	}
-
 	// Check if there are any tree subdirectories with resumable data
 	entries, err := os.ReadDir(snapshotDir)
 	if err != nil {
@@ -112,18 +94,18 @@ func isMultiTreeResumableSnapshot(snapshotDir string) bool {
 }
 
 // WriteSnapshotResumableFromFiles writes a snapshot with resume capability based on file analysis
-func (t *Tree) WriteSnapshotResumableFromFiles(ctx context.Context, snapshotDir string) error {
-	resumeInfo, err := AnalyzePartialSnapshot(snapshotDir)
+func (t *Tree) WriteSnapshotResumableFromFiles(ctx context.Context, treeDir string) error {
+	resumeInfo, err := AnalyzePartialSnapshot(treeDir)
 	if err != nil {
 		// If we can't analyze the partial snapshot, start fresh
-		return t.WriteSnapshot(ctx, snapshotDir)
+		return t.WriteSnapshot(ctx, treeDir)
 	}
 
 	opts := &SnapshotWriteOptions{
 		ResumeInfo: resumeInfo,
 	}
 
-	return writeSnapshotWithOptions(ctx, snapshotDir, t.version, opts, func(w *snapshotWriter) (uint32, error) {
+	return writeSnapshotWithOptions(ctx, treeDir, t.version, opts, func(w *snapshotWriter) (uint32, error) {
 		if t.root == nil {
 			return 0, nil
 		}

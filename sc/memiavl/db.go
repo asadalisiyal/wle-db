@@ -107,8 +107,7 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 			return nil, fmt.Errorf("fail to lock db: %w", err)
 		}
 
-		// cleanup any temporary directories left by interrupted snapshot rewrite
-		// but preserve resumable snapshots
+		// cleanup any invalid temporary directories
 		if err := CleanupTmpDirs(opts.Dir, logger); err != nil {
 			return nil, fmt.Errorf("fail to cleanup tmp directories: %w", err)
 		}
@@ -219,17 +218,17 @@ func OpenDB(logger logger.Logger, targetVersion int64, opts Options) (*DB, error
 	return db, nil
 }
 
-// CleanupTmpDirs removes temporary directories, ensuring only one valid resumable snapshot exists
+
+// CleanupTmpDirs preserves all temporary directories - any -tmp folder is considered valid
 func CleanupTmpDirs(dbDir string, logger logger.Logger) error {
 	entries, err := os.ReadDir(dbDir)
 	if err != nil {
 		return err
 	}
 
-	var validTmpDirs []tmpDirInfo
-	var invalidTmpDirs []string
+	var tmpDirs []tmpDirInfo
 
-	// Find all temp directories and categorize them
+	// Find all temp directories - treat them all as valid
 	for _, entry := range entries {
 		if !entry.IsDir() || !strings.HasSuffix(entry.Name(), "-tmp") {
 			continue
@@ -237,55 +236,44 @@ func CleanupTmpDirs(dbDir string, logger logger.Logger) error {
 
 		tmpPath := filepath.Join(dbDir, entry.Name())
 
-		// Check if this temp directory contains valid resumable snapshot data
-		if IsResumableSnapshot(tmpPath) {
-			// Extract version from temp directory name (e.g., "snapshot-00000000000169630107-tmp")
-			version, err := parseVersionFromTmpDir(entry.Name())
-			if err != nil {
-				logger.Error("invalid temp directory name, removing", "path", tmpPath, "error", err)
-				invalidTmpDirs = append(invalidTmpDirs, tmpPath)
-			} else {
-				validTmpDirs = append(validTmpDirs, tmpDirInfo{
-					path:    tmpPath,
-					version: version,
-				})
+		// Extract version from temp directory name (e.g., "snapshot-00000000000169630107-tmp")
+		version, err := parseVersionFromTmpDir(entry.Name())
+		if err != nil {
+			logger.Error("invalid temp directory name, removing", "path", tmpPath, "error", err)
+			if err := os.RemoveAll(tmpPath); err != nil {
+				logger.Error("failed to remove invalid temp directory", "path", tmpPath, "error", err)
+				return err
 			}
-		} else {
-			// Invalid temp directory (no resumable data)
-			invalidTmpDirs = append(invalidTmpDirs, tmpPath)
+			continue
 		}
+
+		tmpDirs = append(tmpDirs, tmpDirInfo{
+			path:    tmpPath,
+			version: version,
+		})
 	}
 
-	// Remove invalid temp directories
-	for _, tmpPath := range invalidTmpDirs {
-		logger.Info("removing invalid temporary snapshot directory", "path", tmpPath)
-		if err := os.RemoveAll(tmpPath); err != nil {
-			logger.Error("failed to remove invalid temporary snapshot directory", "path", tmpPath, "error", err)
-			return err
-		}
-	}
-
-	// If we have multiple valid temp directories, keep only the newest one
-	if len(validTmpDirs) > 1 {
+	// If we have multiple temp directories, keep only the newest one
+	if len(tmpDirs) > 1 {
 		// Sort by version (newest first)
-		sort.Slice(validTmpDirs, func(i, j int) bool {
-			return validTmpDirs[i].version > validTmpDirs[j].version
+		sort.Slice(tmpDirs, func(i, j int) bool {
+			return tmpDirs[i].version > tmpDirs[j].version
 		})
 
 		// Keep the newest one, remove the rest
-		newest := validTmpDirs[0]
-		logger.Info("keeping newest resumable snapshot", "path", newest.path, "version", newest.version)
+		newest := tmpDirs[0]
+		logger.Info("keeping newest temporary snapshot directory", "path", newest.path, "version", newest.version)
 
-		for i := 1; i < len(validTmpDirs); i++ {
-			oldTmpPath := validTmpDirs[i].path
-			logger.Info("removing older resumable snapshot", "path", oldTmpPath, "version", validTmpDirs[i].version)
+		for i := 1; i < len(tmpDirs); i++ {
+			oldTmpPath := tmpDirs[i].path
+			logger.Info("removing older temporary snapshot directory", "path", oldTmpPath, "version", tmpDirs[i].version)
 			if err := os.RemoveAll(oldTmpPath); err != nil {
-				logger.Error("failed to remove older resumable snapshot", "path", oldTmpPath, "error", err)
+				logger.Error("failed to remove older temporary snapshot directory", "path", oldTmpPath, "error", err)
 				return err
 			}
 		}
-	} else if len(validTmpDirs) == 1 {
-		logger.Info("detected resumable temporary snapshot directory", "path", validTmpDirs[0].path, "version", validTmpDirs[0].version)
+	} else if len(tmpDirs) == 1 {
+		logger.Info("detected temporary snapshot directory", "path", tmpDirs[0].path, "version", tmpDirs[0].version)
 	}
 
 	return nil
@@ -327,11 +315,7 @@ func (db *DB) hasResumableSnapshots() bool {
 
 	for _, entry := range entries {
 		if entry.IsDir() && strings.HasSuffix(entry.Name(), "-tmp") {
-			tmpPath := filepath.Join(db.dir, entry.Name())
-			// Check if this temp directory actually contains resumable snapshot data
-			if IsResumableSnapshot(tmpPath) {
-				return true
-			}
+			return true
 		}
 	}
 
