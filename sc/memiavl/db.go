@@ -721,7 +721,7 @@ func (db *DB) rewriteSnapshotBackground(height int64) error {
 	var resumeSnapshot = false
 
 	var dbCloned = db.copy(0)
-	if height != db.Version() {
+	if height != db.MultiTree.Version() {
 		resumeSnapshot = true
 		opts := db.opts
 		opts.ReadOnly = true
