@@ -738,7 +738,7 @@ func (db *DB) rewriteSnapshotBackground(height int64) error {
 		defer close(ch)
 		if resumeSnapshot {
 			db.logger.Info("resume previous snapshot creation", "version", height)
-			snapshotDir := filepath.Join(dbCloned.dir, filepath.Join(snapshotName(height), "-tmp"))
+			snapshotDir := filepath.Join(dbCloned.dir, snapshotName(height)+"-tmp")
 			if err := dbCloned.ResumeSnapshotFromFiles(ctx, snapshotDir); err != nil {
 				ch <- snapshotResult{err: err}
 				return
