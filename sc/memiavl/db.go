@@ -611,11 +611,16 @@ func (db *DB) RewriteSnapshot(ctx context.Context) error {
 func (db *DB) resumeSnapshotFromFiles(ctx context.Context, snapshotDir string) error {
 	db.logger.Info("resuming multi-tree snapshot", "path", snapshotDir)
 
-	// Resume the snapshot creation for each tree in parallel (matching original behavior)
+	// Resume the snapshot creation for each tree sequentially
 	// Check for COMPLETED marker files to skip already completed trees
-	group, _ := db.snapshotWriterPool.GroupContext(ctx)
-
 	for _, entry := range db.MultiTree.trees {
+		// Check if context is cancelled before processing each tree
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		tree, name := entry.Tree, entry.Name
 		treeDir := filepath.Join(snapshotDir, name)
 
@@ -626,14 +631,13 @@ func (db *DB) resumeSnapshotFromFiles(ctx context.Context, snapshotDir string) e
 		}
 
 		db.logger.Info("resuming tree snapshot", "tree", name)
-		group.Submit(func() error {
-			return tree.WriteSnapshotResumableFromFiles(ctx, treeDir)
-		})
-	}
-
-	// Wait for all resume operations to complete
-	if err := group.Wait(); err != nil {
-		return err
+		if err := tree.WriteSnapshotResumableFromFiles(ctx, treeDir); err != nil {
+			// If context was cancelled, return immediately to avoid deadlock
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return fmt.Errorf("failed to resume tree %s: %w", name, err)
+		}
 	}
 
 	// Write commit info
