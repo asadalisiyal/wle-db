@@ -420,8 +420,7 @@ func (db *Database) WriteBlockRangeHash(storeKey string, beginBlockRange, endBlo
 func retrieveEarliestVersion(storage *grocksdb.DB) (int64, error) {
 	bz, err := storage.GetBytes(defaultReadOpts, []byte(earliestVersionKey))
 	if err != nil {
-		// Assuming RocksDB returns an error for key not found similar to how PebbleDB uses pebble.ErrNotFound
-		// We'll treat any error as "not found" for now, but this might need adjustment based on grocksdb behavior
+		fmt.Printf("warning: rocksdb get for earliestVersionKey failed: %v", err)
 		return 0, nil
 	}
 
