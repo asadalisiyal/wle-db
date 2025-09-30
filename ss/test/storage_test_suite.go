@@ -769,7 +769,7 @@ func (s *StorageTestSuite) TestDatabasePruneKeepLastVersion() {
 	s.Require().NoError(newDB.Prune(150))
 
 	// Can still retrieve those keys because KeepLastVersion is true
-	bz, err = newDB.Get(storeKey1, 160, []byte("key000"))
+	bz, err := newDB.Get(storeKey1, 160, []byte("key000"))
 	s.Require().NoError(err)
 	s.Require().Equal([]byte("value001"), bz)
 
