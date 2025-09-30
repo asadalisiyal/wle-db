@@ -207,7 +207,7 @@ func (db *Database) GetEarliestVersion() (int64, error) {
 }
 
 func (db *Database) Has(storeKey string, version int64, key []byte) (bool, error) {
-	if version < db.tsLow {
+	if version < db.earliestVersion {
 		return false, nil
 	}
 
@@ -220,7 +220,7 @@ func (db *Database) Has(storeKey string, version int64, key []byte) (bool, error
 }
 
 func (db *Database) Get(storeKey string, version int64, key []byte) ([]byte, error) {
-	if version < db.tsLow {
+	if version < db.earliestVersion {
 		return nil, errorutils.ErrRecordNotFound
 	}
 
@@ -320,7 +320,6 @@ func (db *Database) Prune(version int64) error {
 
 	db.tsLow = tsLow
 
-	// Update earliestVersion to match (for API consistency with PebbleDB)
 	return db.SetEarliestVersion(tsLow, false)
 }
 
@@ -337,7 +336,7 @@ func (db *Database) Iterator(storeKey string, version int64, start, end []byte) 
 	start, end = util.IterateWithPrefix(prefix, start, end)
 
 	itr := db.storage.NewIteratorCF(newTSReadOptions(version), db.cfHandle)
-	return NewRocksDBIterator(itr, prefix, start, end, false), nil
+	return NewRocksDBIterator(itr, prefix, start, end, version, db.earliestVersion, false), nil
 }
 
 func (db *Database) ReverseIterator(storeKey string, version int64, start, end []byte) (types.DBIterator, error) {
@@ -353,7 +352,7 @@ func (db *Database) ReverseIterator(storeKey string, version int64, start, end [
 	start, end = util.IterateWithPrefix(prefix, start, end)
 
 	itr := db.storage.NewIteratorCF(newTSReadOptions(version), db.cfHandle)
-	return NewRocksDBIterator(itr, prefix, start, end, true), nil
+	return NewRocksDBIterator(itr, prefix, start, end, version, db.earliestVersion, true), nil
 }
 
 // Import loads the initial version of the state in parallel with numWorkers goroutines
