@@ -9,13 +9,17 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/linxGnu/grocksdb"
 	errorutils "github.com/sei-protocol/sei-db/common/errors"
+	"github.com/sei-protocol/sei-db/common/logger"
+	"github.com/sei-protocol/sei-db/common/utils"
 	"github.com/sei-protocol/sei-db/config"
 	"github.com/sei-protocol/sei-db/proto"
 	"github.com/sei-protocol/sei-db/ss/types"
 	"github.com/sei-protocol/sei-db/ss/util"
+	"github.com/sei-protocol/sei-db/stream/changelog"
 	"golang.org/x/exp/slices"
 )
 
@@ -37,6 +41,11 @@ var (
 	defaultReadOpts  = grocksdb.NewDefaultReadOptions()
 )
 
+type VersionedChangesets struct {
+	Version    int64
+	Changesets []*proto.NamedChangeSet
+}
+
 type Database struct {
 	storage  *grocksdb.DB
 	config   config.StateStoreConfig
@@ -49,6 +58,14 @@ type Database struct {
 
 	// Earliest version for db after pruning
 	earliestVersion int64
+
+	asyncWriteWG sync.WaitGroup
+
+	// Changelog used to support async write
+	streamHandler *changelog.Stream
+
+	// Pending changes to be written to the DB
+	pendingChanges chan VersionedChangesets
 }
 
 func New(dataDir string, config config.StateStoreConfig) (*Database, error) {
@@ -73,13 +90,31 @@ func New(dataDir string, config config.StateStoreConfig) (*Database, error) {
 		return nil, fmt.Errorf("failed to retrieve earliest version: %w", err)
 	}
 
-	return &Database{
+	database := &Database{
 		storage:         storage,
 		config:          config,
 		cfHandle:        cfHandle,
 		tsLow:           tsLow,
 		earliestVersion: earliestVersion,
-	}, nil
+		pendingChanges:  make(chan VersionedChangesets, config.AsyncWriteBuffer),
+	}
+
+	if config.DedicatedChangelog {
+		streamHandler, _ := changelog.NewStream(
+			logger.NewNopLogger(),
+			utils.GetChangelogPath(dataDir),
+			changelog.Config{
+				DisableFsync:  true,
+				ZeroCopy:      true,
+				KeepRecent:    uint64(config.KeepRecent),
+				PruneInterval: 300 * time.Second,
+			},
+		)
+		database.streamHandler = streamHandler
+		go database.writeAsyncInBackground()
+	}
+
+	return database, nil
 }
 
 func NewWithDB(storage *grocksdb.DB, cfHandle *grocksdb.ColumnFamilyHandle) (*Database, error) {
@@ -108,6 +143,17 @@ func NewWithDB(storage *grocksdb.DB, cfHandle *grocksdb.ColumnFamilyHandle) (*Da
 }
 
 func (db *Database) Close() error {
+	if db.streamHandler != nil {
+		// Close the changelog stream first
+		db.streamHandler.Close()
+		// Close the pending changes channel to signal the background goroutine to stop
+		close(db.pendingChanges)
+		// Wait for the async writes to finish processing all buffered items
+		db.asyncWriteWG.Wait()
+		// Only set to nil after background goroutine has finished
+		db.streamHandler = nil
+	}
+
 	db.storage.Close()
 
 	db.storage = nil
@@ -187,6 +233,14 @@ func (db *Database) Get(storeKey string, version int64, key []byte) ([]byte, err
 }
 
 func (db *Database) ApplyChangeset(version int64, cs *proto.NamedChangeSet) error {
+	// Check if version is 0 and change it to 1
+	// We do this specifically since keys written as part of genesis state come in as version 0
+	// But pebbledb treats version 0 as special, so apply the changeset at version 1 instead
+	// Port this over to rocksdb for consistency
+	if version == 0 {
+		version = 1
+	}
+
 	b := NewBatch(db, version)
 
 	for _, kvPair := range cs.Changeset.Pairs {
@@ -205,7 +259,45 @@ func (db *Database) ApplyChangeset(version int64, cs *proto.NamedChangeSet) erro
 }
 
 func (db *Database) ApplyChangesetAsync(version int64, changesets []*proto.NamedChangeSet) error {
-	return fmt.Errorf("not implemented")
+	// Write to WAL first
+	if db.streamHandler != nil {
+		entry := proto.ChangelogEntry{
+			Version: version,
+		}
+		entry.Changesets = changesets
+		entry.Upgrades = nil
+		err := db.streamHandler.WriteNextEntry(entry)
+		if err != nil {
+			return err
+		}
+	}
+	// Then write to pending changes
+	db.pendingChanges <- VersionedChangesets{
+		Version:    version,
+		Changesets: changesets,
+	}
+
+	return nil
+}
+
+func (db *Database) writeAsyncInBackground() {
+	db.asyncWriteWG.Add(1)
+	defer db.asyncWriteWG.Done()
+	for nextChange := range db.pendingChanges {
+		if db.streamHandler != nil {
+			version := nextChange.Version
+			for _, cs := range nextChange.Changesets {
+				err := db.ApplyChangeset(version, cs)
+				if err != nil {
+					panic(err)
+				}
+			}
+			err := db.SetLatestVersion(version)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
 }
 
 // Prune attempts to prune all versions up to and including the provided version.
@@ -227,7 +319,9 @@ func (db *Database) Prune(version int64) error {
 	}
 
 	db.tsLow = tsLow
-	return nil
+
+	// Update earliestVersion to match (for API consistency with PebbleDB)
+	return db.SetEarliestVersion(tsLow, false)
 }
 
 func (db *Database) Iterator(storeKey string, version int64, start, end []byte) (types.DBIterator, error) {
