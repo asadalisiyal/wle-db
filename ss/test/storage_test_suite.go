@@ -7,7 +7,6 @@ import (
 	"github.com/cosmos/iavl"
 	errorutils "github.com/sei-protocol/sei-db/common/errors"
 	"github.com/sei-protocol/sei-db/config"
-	"github.com/sei-protocol/sei-db/ss"
 	"github.com/sei-protocol/sei-db/ss/types"
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/exp/slices"
@@ -1227,7 +1226,7 @@ func (s *StorageTestSuite) TestDatabaseImport() {
 func (s *StorageTestSuite) TestDatabaseRawImport() {
 	// RawImport is only useful for PebbleDB backend
 	// NOTE: Will be removed from interface soon
-	if ss.BackendType(s.Config.Backend) != ss.PebbleDBBackend {
+	if s.Config.Backend != "pebbledb" {
 		s.T().Skip("RawImport test only runs for pebbledb backend")
 	}
 
