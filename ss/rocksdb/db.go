@@ -229,6 +229,11 @@ func (db *Database) Get(storeKey string, version int64, key []byte) ([]byte, err
 		return nil, fmt.Errorf("failed to get RocksDB slice: %w", err)
 	}
 
+	if !slice.Exists() {
+		slice.Free()
+		return nil, errorutils.ErrRecordNotFound
+	}
+
 	return copyAndFreeSlice(slice), nil
 }
 
