@@ -426,7 +426,7 @@ func (db *Database) RawIterate(storeKey string, fn func(key []byte, value []byte
 	defer readOpts.Destroy()
 
 	itr := db.storage.NewIteratorCF(readOpts, db.cfHandle)
-	rocksItr := NewRocksDBIterator(itr, prefix, start, end, false)
+	rocksItr := NewRocksDBIterator(itr, prefix, start, end, latestVersion, 1, false)
 	defer rocksItr.Close()
 
 	for rocksItr.Valid() {
