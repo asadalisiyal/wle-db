@@ -1,4 +1,4 @@
-module github.com/sei-protocol/sei-db
+module github.com/asadalisiyal/wle-db
 
 go 1.19
 
