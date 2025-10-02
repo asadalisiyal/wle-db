@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/cosmos/iavl"
-	"github.com/sei-protocol/sei-db/proto"
-	"github.com/sei-protocol/sei-db/ss/types"
-	"github.com/sei-protocol/sei-db/tools/utils"
+	"github.com/asadalisiyal/wle-db/proto"
+	"github.com/asadalisiyal/wle-db/ss/types"
+	"github.com/asadalisiyal/wle-db/tools/utils"
 )
 
 // writeToDBConcurrently generates random write load against the db

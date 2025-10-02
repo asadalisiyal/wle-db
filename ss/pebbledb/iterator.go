@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/cockroachdb/pebble"
-	"github.com/sei-protocol/sei-db/ss/types"
+	"github.com/asadalisiyal/wle-db/ss/types"
 	"golang.org/x/exp/slices"
 )
 

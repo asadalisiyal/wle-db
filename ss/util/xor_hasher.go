@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"sync"
 
-	"github.com/sei-protocol/sei-db/ss/types"
+	"github.com/asadalisiyal/wle-db/ss/types"
 )
 
 var _ HashCalculator = (*XorHashCalculator)(nil)

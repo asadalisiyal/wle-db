@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/cosmos/iavl"
-	"github.com/sei-protocol/sei-db/common/logger"
-	"github.com/sei-protocol/sei-db/config"
-	"github.com/sei-protocol/sei-db/proto"
+	"github.com/asadalisiyal/wle-db/common/logger"
+	"github.com/asadalisiyal/wle-db/config"
+	"github.com/asadalisiyal/wle-db/proto"
 	"github.com/stretchr/testify/require"
 )
 

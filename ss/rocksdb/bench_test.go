@@ -6,9 +6,9 @@ package rocksdb
 import (
 	"testing"
 
-	"github.com/sei-protocol/sei-db/config"
-	sstest "github.com/sei-protocol/sei-db/ss/test"
-	"github.com/sei-protocol/sei-db/ss/types"
+	"github.com/asadalisiyal/wle-db/config"
+	sstest "github.com/asadalisiyal/wle-db/ss/test"
+	"github.com/asadalisiyal/wle-db/ss/types"
 )
 
 func BenchmarkDBBackend(b *testing.B) {

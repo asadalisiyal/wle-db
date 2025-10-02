@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/cockroachdb/pebble"
-	"github.com/sei-protocol/sei-db/common/errors"
+	"github.com/asadalisiyal/wle-db/common/errors"
 )
 
 type Batch struct {

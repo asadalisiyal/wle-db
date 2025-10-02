@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sei-protocol/sei-db/tools/cmd/seidb/benchmark"
-	"github.com/sei-protocol/sei-db/tools/cmd/seidb/operations"
+	"github.com/asadalisiyal/wle-db/tools/cmd/seidb/benchmark"
+	"github.com/asadalisiyal/wle-db/tools/cmd/seidb/operations"
 	"github.com/spf13/cobra"
 )
 

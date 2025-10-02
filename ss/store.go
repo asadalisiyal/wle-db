@@ -3,13 +3,13 @@ package ss
 import (
 	"fmt"
 
-	"github.com/sei-protocol/sei-db/common/logger"
-	"github.com/sei-protocol/sei-db/common/utils"
-	"github.com/sei-protocol/sei-db/config"
-	"github.com/sei-protocol/sei-db/proto"
-	"github.com/sei-protocol/sei-db/ss/pruning"
-	"github.com/sei-protocol/sei-db/ss/types"
-	"github.com/sei-protocol/sei-db/stream/changelog"
+	"github.com/asadalisiyal/wle-db/common/logger"
+	"github.com/asadalisiyal/wle-db/common/utils"
+	"github.com/asadalisiyal/wle-db/config"
+	"github.com/asadalisiyal/wle-db/proto"
+	"github.com/asadalisiyal/wle-db/ss/pruning"
+	"github.com/asadalisiyal/wle-db/ss/types"
+	"github.com/asadalisiyal/wle-db/stream/changelog"
 )
 
 type BackendType string

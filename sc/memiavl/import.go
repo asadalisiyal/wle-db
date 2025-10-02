@@ -8,8 +8,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sei-protocol/sei-db/proto"
-	"github.com/sei-protocol/sei-db/sc/types"
+	"github.com/asadalisiyal/wle-db/proto"
+	"github.com/asadalisiyal/wle-db/sc/types"
 )
 
 var (

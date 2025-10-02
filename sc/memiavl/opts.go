@@ -3,7 +3,7 @@ package memiavl
 import (
 	"errors"
 
-	"github.com/sei-protocol/sei-db/config"
+	"github.com/asadalisiyal/wle-db/config"
 )
 
 type Options struct {

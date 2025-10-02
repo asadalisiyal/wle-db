@@ -4,10 +4,10 @@
 package ss
 
 import (
-	"github.com/sei-protocol/sei-db/common/utils"
-	"github.com/sei-protocol/sei-db/config"
-	"github.com/sei-protocol/sei-db/ss/sqlite"
-	"github.com/sei-protocol/sei-db/ss/types"
+	"github.com/asadalisiyal/wle-db/common/utils"
+	"github.com/asadalisiyal/wle-db/config"
+	"github.com/asadalisiyal/wle-db/ss/sqlite"
+	"github.com/asadalisiyal/wle-db/ss/types"
 )
 
 func init() {

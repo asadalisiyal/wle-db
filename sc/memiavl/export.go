@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"path/filepath"
 
-	errorutils "github.com/sei-protocol/sei-db/common/errors"
-	"github.com/sei-protocol/sei-db/common/logger"
-	"github.com/sei-protocol/sei-db/config"
-	"github.com/sei-protocol/sei-db/sc/types"
+	errorutils "github.com/asadalisiyal/wle-db/common/errors"
+	"github.com/asadalisiyal/wle-db/common/logger"
+	"github.com/asadalisiyal/wle-db/config"
+	"github.com/asadalisiyal/wle-db/sc/types"
 )
 
 // exportBufferSize is the number of nodes to buffer in the exporter. It improves throughput by

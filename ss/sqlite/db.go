@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	errorutils "github.com/sei-protocol/sei-db/common/errors"
-	"github.com/sei-protocol/sei-db/config"
-	"github.com/sei-protocol/sei-db/proto"
-	"github.com/sei-protocol/sei-db/ss/types"
+	errorutils "github.com/asadalisiyal/wle-db/common/errors"
+	"github.com/asadalisiyal/wle-db/config"
+	"github.com/asadalisiyal/wle-db/proto"
+	"github.com/asadalisiyal/wle-db/ss/types"
 	_ "modernc.org/sqlite"
 )
 

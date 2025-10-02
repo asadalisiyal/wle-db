@@ -5,8 +5,8 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/sei-protocol/sei-db/common/logger"
-	"github.com/sei-protocol/sei-db/ss/types"
+	"github.com/asadalisiyal/wle-db/common/logger"
+	"github.com/asadalisiyal/wle-db/ss/types"
 )
 
 type Manager struct {

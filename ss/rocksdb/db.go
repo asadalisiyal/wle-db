@@ -10,11 +10,11 @@ import (
 	"sync"
 
 	"github.com/linxGnu/grocksdb"
-	"github.com/sei-protocol/sei-db/common/errors"
-	"github.com/sei-protocol/sei-db/config"
-	"github.com/sei-protocol/sei-db/proto"
-	"github.com/sei-protocol/sei-db/ss/types"
-	"github.com/sei-protocol/sei-db/ss/util"
+	"github.com/asadalisiyal/wle-db/common/errors"
+	"github.com/asadalisiyal/wle-db/config"
+	"github.com/asadalisiyal/wle-db/proto"
+	"github.com/asadalisiyal/wle-db/ss/types"
+	"github.com/asadalisiyal/wle-db/ss/util"
 	"golang.org/x/exp/slices"
 )
 

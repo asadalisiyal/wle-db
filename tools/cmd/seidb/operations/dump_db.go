@@ -5,11 +5,11 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/sei-protocol/sei-db/common/logger"
-	"github.com/sei-protocol/sei-db/config"
-	"github.com/sei-protocol/sei-db/ss"
-	"github.com/sei-protocol/sei-db/tools/cmd/seidb/benchmark"
-	"github.com/sei-protocol/sei-db/tools/utils"
+	"github.com/asadalisiyal/wle-db/common/logger"
+	"github.com/asadalisiyal/wle-db/config"
+	"github.com/asadalisiyal/wle-db/ss"
+	"github.com/asadalisiyal/wle-db/tools/cmd/seidb/benchmark"
+	"github.com/asadalisiyal/wle-db/tools/utils"
 	"github.com/spf13/cobra"
 )
 

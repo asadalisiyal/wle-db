@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sei-protocol/sei-db/common/logger"
-	"github.com/sei-protocol/sei-db/sc/memiavl"
+	"github.com/asadalisiyal/wle-db/common/logger"
+	"github.com/asadalisiyal/wle-db/sc/memiavl"
 	"github.com/spf13/cobra"
 )
 

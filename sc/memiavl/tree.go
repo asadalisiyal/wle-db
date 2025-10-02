@@ -9,8 +9,8 @@ import (
 
 	ics23 "github.com/confio/ics23/go"
 	"github.com/cosmos/iavl"
-	"github.com/sei-protocol/sei-db/common/utils"
-	"github.com/sei-protocol/sei-db/sc/types"
+	"github.com/asadalisiyal/wle-db/common/utils"
+	"github.com/asadalisiyal/wle-db/sc/types"
 	dbm "github.com/tendermint/tm-db"
 )
 

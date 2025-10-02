@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/cosmos/iavl"
-	"github.com/sei-protocol/sei-db/common/errors"
-	"github.com/sei-protocol/sei-db/common/logger"
-	"github.com/sei-protocol/sei-db/common/utils"
-	"github.com/sei-protocol/sei-db/proto"
+	"github.com/asadalisiyal/wle-db/common/errors"
+	"github.com/asadalisiyal/wle-db/common/logger"
+	"github.com/asadalisiyal/wle-db/common/utils"
+	"github.com/asadalisiyal/wle-db/proto"
 	"github.com/stretchr/testify/require"
 )
 

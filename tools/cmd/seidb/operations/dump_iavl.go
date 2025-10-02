@@ -3,9 +3,9 @@ package operations
 import (
 	"fmt"
 
-	"github.com/sei-protocol/sei-db/common/logger"
-	"github.com/sei-protocol/sei-db/sc/memiavl"
-	"github.com/sei-protocol/sei-db/tools/utils"
+	"github.com/asadalisiyal/wle-db/common/logger"
+	"github.com/asadalisiyal/wle-db/sc/memiavl"
+	"github.com/asadalisiyal/wle-db/tools/utils"
 	"github.com/spf13/cobra"
 )
 

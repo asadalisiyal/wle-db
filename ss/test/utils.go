@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/cosmos/iavl"
-	"github.com/sei-protocol/sei-db/proto"
-	"github.com/sei-protocol/sei-db/ss/types"
+	"github.com/asadalisiyal/wle-db/proto"
+	"github.com/asadalisiyal/wle-db/ss/types"
 )
 
 // Fills the db with multiple keys each with different versions

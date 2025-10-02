@@ -10,10 +10,10 @@ import (
 
 	"github.com/alitto/pond"
 	"github.com/cosmos/iavl"
-	"github.com/sei-protocol/sei-db/common/errors"
-	"github.com/sei-protocol/sei-db/common/utils"
-	"github.com/sei-protocol/sei-db/proto"
-	"github.com/sei-protocol/sei-db/stream/types"
+	"github.com/asadalisiyal/wle-db/common/errors"
+	"github.com/asadalisiyal/wle-db/common/utils"
+	"github.com/asadalisiyal/wle-db/proto"
+	"github.com/asadalisiyal/wle-db/stream/types"
 	"golang.org/x/exp/slices"
 )
 
